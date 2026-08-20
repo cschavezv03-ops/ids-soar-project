@@ -1,0 +1,8 @@
+.venv/
+__pychache__/
+*.pyc
+data/
+*.pcap
+*.csv
+*.db
+evidence/*.tmp
