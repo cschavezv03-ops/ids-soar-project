@@ -1,18 +1,38 @@
 """
-Thin wrapper around cicflowmeter's internals.
+Thin wrapper around cicflowmeter's internals, with two bugs worked around.
 
-Why this exists: cicflowmeter 0.5.0 ships a broken CLI. Its main()
-calls create_sniffer() with positional arguments that no longer match
-the function signature (an `input_directory` parameter was inserted
-mid-signature and the call site was never updated), so `verbose` lands
-in `fields` and every invocation crashes. We bypass main() entirely and
-call create_sniffer() with KEYWORD arguments, which is immune to that
-misalignment. The flow-extraction engine itself is unaffected.
+BUG 1 (CLI): cicflowmeter 0.5.0's main() calls create_sniffer() with
+positional arguments that no longer match its signature, so `verbose`
+lands in `fields` and every command-line invocation crashes. We bypass
+main() and pass keyword arguments instead.
+
+BUG 2 (double counting): Flow.__init__ seeds self.packets with the first
+packet, and FlowSession.process() then calls add_packet() with that same
+packet. Every flow counts its first packet twice, inflating forward
+packet/byte counts, SYN counts, rates, and corrupting IAT statistics
+(the duplicate has an identical timestamp, so it injects a 0-second gap).
+We clear the pre-seeded list so process() is the only thing that adds it.
 """
 import sys
 from pathlib import Path
 
+from cicflowmeter.flow import Flow
+from cicflowmeter.flow_session import FlowSession
 from cicflowmeter.sniffer import create_sniffer
+
+# --- Bug 2 patch. Applied at import time, before any Flow is built. ---
+_original_flow_init = Flow.__init__
+
+
+def _patched_flow_init(self, packet, direction):
+    _original_flow_init(self, packet, direction)
+    # Drop the pre-seeded packet. FlowSession.process() adds it back
+    # immediately after construction, so nothing is lost.
+    self.packets = []
+
+
+Flow.__init__ = _patched_flow_init
+# ---------------------------------------------------------------------
 
 
 def pcap_to_csv(pcap_path: str | Path, csv_path: str | Path) -> Path:
@@ -23,27 +43,25 @@ def pcap_to_csv(pcap_path: str | Path, csv_path: str | Path) -> Path:
         raise FileNotFoundError(f"pcap not found: {pcap_path}")
     csv_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Every argument by name: this is what sidesteps the 0.5.0 bug.
     sniffer, session = create_sniffer(
         input_file=str(pcap_path),
-        input_interface=None,      # exactly one input source may be set
-        output_mode="csv",         # the value `-c` maps to
+        input_interface=None,
+        output_mode="csv",
         output=str(csv_path),
         input_directory=None,
-        fields=None,               # None = keep all columns
+        fields=None,
         verbose=False,
     )
 
     sniffer.start()
     try:
-        sniffer.join()             # block until the whole pcap is read
+        sniffer.join()
     finally:
-        # The library spawns a background thread that expires idle flows.
         if hasattr(session, "_gc_stop"):
             session._gc_stop.set()
             session._gc_thread.join(timeout=2.0)
-        # Flows still open in memory are written out here. Without this
-        # call, unterminated flows (e.g. scan probes) never reach the CSV.
+        # Flows still open in memory are written here. Without this,
+        # unterminated flows (e.g. scan probes) never reach the CSV.
         session.flush_flows()
 
     return csv_path
