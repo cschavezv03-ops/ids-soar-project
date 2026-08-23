@@ -25,6 +25,13 @@ class Flow:
     duration: float = 0.0
     packet_sizes_forward: list = field(default_factory=list)
     packet_sizes_backward: list = field(default_factory=list)
+    syn_count: int = 0
+    ack_count: int = 0
+    fin_count: int = 0
+    rst_count: int = 0
+    psh_count: int = 0
+
+
  
 
 #Devuelve la 5 tupla - la informacion necesaria para saber a que conversacion pertenece cada paquete 
@@ -195,13 +202,11 @@ class Flow:
             return 0.0
 
         return max(self.packet_sizes_backward)
-        
-    
 
 
     
 
-    def add_packet(self, src_ip, src_port, dst_ip, dst_port, packet_size, timestamps):
+    def add_packet(self, src_ip, src_port, dst_ip, dst_port, packet_size, timestamps, tcp_flags = None):
         self.packet_count += 1
         self.total_bytes += packet_size
 
@@ -217,6 +222,23 @@ class Flow:
             self.backward_bytes += packet_size
             self.timestamps_backward.append(timestamps)
             self.packet_sizes_backward.append(packet_size)
-    
+
+#banderas tcp
+
+        if tcp_flags and "S" in tcp_flags:
+            self.syn_count += 1
+
+        if tcp_flags and "A" in tcp_flags:
+            self.ack_count += 1
+
+        if tcp_flags and "F" in tcp_flags:
+            self.fin_count += 1
+        
+        if tcp_flags and "R" in tcp_flags:
+            self.rst_count += 1   
+
+        if tcp_flags and "P" in tcp_flags:
+            self.psh_count += 1   
+
 
         
