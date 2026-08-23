@@ -6,6 +6,9 @@ class FlowManager:
     def __init__(self):
         self.flows = {}
 
+        # guarda en que direccion se dio el FIN
+        self.fin_seen = {}
+
     def get_or_create_flow(
             self,
             src_ip,
@@ -56,8 +59,7 @@ class FlowManager:
             protocol,
             packet_size,
             timestamp,
-            tcp_flags = None
-
+            tcp_flags=None
     ):
 
         flow = self.get_or_create_flow(
@@ -78,62 +80,97 @@ class FlowManager:
             tcp_flags
         )
 
-        if tcp_flags and ("F" in tcp_flags or "R" in tcp_flags):
+        key = flow.key()
 
-            key = flow.key()
+        
+        # RST
+        
+
+        if tcp_flags and "R" in tcp_flags:
 
             if key in self.flows:
                 del self.flows[key]
 
+            self.fin_seen.pop(key, None)
+
             return flow
 
+        
+        # FIN
+        
+        if tcp_flags and "F" in tcp_flags:
+
+            if key not in self.fin_seen:
+                self.fin_seen[key] = {
+                    "directions": set(),
+                    "waiting_final_ack": False
+                }
+
+            direction= (src_ip, src_port, dst_ip, dst_port)
+
+            self.fin_seen[key]["directions"].add(direction)
+
+            if len(self.fin_seen[key]["directions"]) >= 2:
+                self.fin_seen[key]["waiting_final_ack"] = True
+
+            return None
+
+    #ack final
+
+        if tcp_flags and "A" in tcp_flags:  
+            
+            if key in self.fin_seen:  
+                if self.fin_seen[key]["waiting_final_ack"]:
+
+                    if key in self.flows:
+                        del self.flows[key]
+
+                    self.fin_seen.pop(key,None)
+
+                    return flow
         return None
 
     def check_timeouts(self, current_time):
+
         expired_flows = []
 
         for key, flow in list(self.flows.items()):
+
             if not flow.timestamps:
                 continue
 
-            last_packet_time = flow.timestamps[0]
+            # Para timeout de INACTIVIDAD necesitamos el ultimo paquete que se ha recibido
+            last_packet_time = flow.timestamps[-1]
 
             if current_time - last_packet_time >= 15:
+
                 expired_flows.append(flow)
+
                 del self.flows[key]
 
-        return expired_flows
+                self.fin_seen.pop(key, None)
 
+        return expired_flows
 
     def check_active_timeouts(self, current_time):
 
-        print("CHECK ACTIVE TIMEOUTS")
-        print("Current:", current_time)
-        print("Flows:", len(self.flows))
-
         expired_flows = []
 
         for key, flow in list(self.flows.items()):
 
-            print("Flow:", key)
-            print("Timestamps:", flow.timestamps)
-
             if not flow.timestamps:
-                print("SIN TIMESTAMPS")
                 continue
 
             first_packet_time = flow.timestamps[0]
+
             flow_duration = current_time - first_packet_time
 
-            print("First:", first_packet_time)
-            print("Duration:", flow_duration)
-            print("Expired:", flow_duration >= 120)
-
             if flow_duration >= 120:
-                print(">>> EXPIRANDO <<<")
 
                 expired_flows.append(flow)
+
                 del self.flows[key]
 
+                self.fin_seen.pop(key, None)
+
         return expired_flows
-        
