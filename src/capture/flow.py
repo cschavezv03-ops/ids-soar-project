@@ -23,7 +23,8 @@ class Flow:
     timestamps_forward: list = field(default_factory=list)
     timestamps_backward: list = field(default_factory=list)
     duration: float = 0.0
-
+    packet_sizes_forward: list = field(default_factory=list)
+    packet_sizes_backward: list = field(default_factory=list)
  
 
 #Devuelve la 5 tupla - la informacion necesaria para saber a que conversacion pertenece cada paquete 
@@ -142,7 +143,62 @@ class Flow:
 
         return self.packet_count / duration 
 
+#Para los tamanios de los paquetes
     
+    def calculate_forward_packet_size_mean(self):
+
+        if not self.packet_sizes_forward:
+            return 0.0
+
+        return sum(self.packet_sizes_forward) / len(self.packet_sizes_forward)
+
+    def calculate_forward_packet_size_std(self):
+
+        if len(self.packet_sizes_forward) < 2:
+            return 0.0
+
+        mean = self.calculate_forward_packet_size_mean()
+
+        variance = sum((x - mean) ** 2 for x in self.packet_sizes_forward) / len (self.packet_sizes_forward)
+
+        return variance ** 0.5
+
+    def calculate_forward_packet_size_max(self):
+
+        if not self.packet_sizes_forward:
+            return 0.0
+
+        return max(self.packet_sizes_forward)
+    
+
+    def calculate_backward_packet_size_mean(self):
+
+        if not self.packet_sizes_backward:
+            return 0.0
+
+        return sum(self.packet_sizes_backward) / len(self.packet_sizes_backward)
+
+    def calculate_backward_packet_size_std(self):
+
+        if len(self.packet_sizes_backward) < 2:
+            return 0.0
+
+        mean = self.calculate_backward_packet_size_mean()
+
+        variance = sum((x - mean) ** 2 for x in self.packet_sizes_backward) / len (self.packet_sizes_backward)
+
+        return variance ** 0.5
+
+    def calculate_backward_packet_size_max(self):
+
+        if not self.packet_sizes_backward:
+            return 0.0
+
+        return max(self.packet_sizes_backward)
+        
+    
+
+
     
 
     def add_packet(self, src_ip, src_port, dst_ip, dst_port, packet_size, timestamps):
@@ -155,10 +211,12 @@ class Flow:
             self.forward_packets += 1
             self.forward_bytes += packet_size
             self.timestamps_forward.append(timestamps)
+            self.packet_sizes_forward.append(packet_size)
         else:
             self.backward_packets += 1
             self.backward_bytes += packet_size
             self.timestamps_backward.append(timestamps)
+            self.packet_sizes_backward.append(packet_size)
     
 
         
