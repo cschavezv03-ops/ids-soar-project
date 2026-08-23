@@ -24,3 +24,8 @@ SHORT_BLOCK_TTL   = 300   # medium severity: 5 min
 # --- Storage / runtime ---
 CASES_DB = "cases.db"
 MODE     = "monitor"   # monitor | alert | enforce
+
+#--- Capture ---
+
+CAPTURE_INTERFACE = None
+BPF_FILTER = "ip and (tcp or udp)"
