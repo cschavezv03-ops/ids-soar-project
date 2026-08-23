@@ -203,6 +203,28 @@ class Flow:
 
         return max(self.packet_sizes_backward)
 
+    #Relacion bytes bajada/subida
+
+    def calculate_byte_ratio(self):
+
+        if self.forward_bytes == 0:
+            return 0.0
+
+        return self.backward_bytes / self.forward_bytes
+
+    def calculate_mean_packet_size(self):
+        if self.packet_count == 0:
+            return 0.0
+
+        return self.total_bytes / self.packet_count
+
+    def calculate_bytes_per_second(self):
+        duration = self.calculate_duration()
+
+        if duration <= 0:
+            return 0.0
+
+        return self.total_bytes / duration
 
     
 
@@ -240,5 +262,39 @@ class Flow:
         if tcp_flags and "P" in tcp_flags:
             self.psh_count += 1   
 
+    def get_features(self):
+        return [
+            # 1-5: duración y volumen
+            self.calculate_duration(),
+            self.forward_packets,
+            self.backward_packets,
+            self.forward_bytes,
+            self.backward_bytes,
 
-        
+            # 6-11: tamaños de paquetes
+            self.calculate_forward_packet_size_mean(),
+            self.calculate_forward_packet_size_std(),
+            self.calculate_forward_packet_size_max(),
+            self.calculate_backward_packet_size_mean(),
+            self.calculate_backward_packet_size_std(),
+            self.calculate_backward_packet_size_max(),
+
+            # 12-16: ritmo temporal
+            self.calculate_iat_mean(),
+            self.calculate_iat_std(),
+            self.calculate_iat_forward_mean(),
+            self.calculate_iat_backward_mean(),
+            self.calculate_packets_per_second(),
+
+            # 17-21: TCP flags
+            self.syn_count,
+            self.ack_count,
+            self.fin_count,
+            self.rst_count,
+            self.psh_count,
+
+            # 22-24: simetría y tasas
+            self.calculate_byte_ratio(),
+            self.calculate_mean_packet_size(),
+            self.calculate_bytes_per_second(),
+        ]
