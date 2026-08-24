@@ -1,4 +1,4 @@
-# Informe técnico — Detección y corrección de tres defectos en `cicflowmeter 0.5.0`
+# Informe técnico — Tres defectos y una divergencia de definición en `cicflowmeter 0.5.0`
 
 **Proyecto:** Sistema de Detección de Intrusiones de Red con Respuesta Automática SOAR
 **Curso:** Fundamentos de Inteligencia Artificial · Summer Camp 2026 · CyberMinds EPN
@@ -25,6 +25,13 @@ numéricamente contra un caso de prueba de respuesta conocida, con coincidencia 
 las magnitudes comprobadas. En el caso del tercer defecto, la verificación exigió además
 comprobar que el dataset de referencia **no** comparte el defecto: si lo compartiera, corregir
 la librería rompería la paridad en lugar de restaurarla.
+
+El documento recoge además una **divergencia de definición** que no es un defecto de la
+librería: `cicflowmeter` mide la longitud de paquete como trama completa y el CSV de referencia
+la mide como payload. Aquí la decisión fue la opuesta —**replicar el comportamiento del CSV en
+lugar de corregirlo**— y el mismo criterio explica ambas: la paridad se define contra el CSV, no
+contra la corrección matemática. Cuando la reimplementación en Python se aparta del CSV, se
+corrige; cuando quien se aparta de la definición estricta es el CSV, se replica.
 
 ---
 
@@ -488,7 +495,188 @@ que el inventario completo de defectos quede recogido en un solo lugar.
 
 ---
 
-## 6. Verificación de la corrección
+## 6. Divergencia de definición — longitud de paquete (no es un defecto)
+
+Las tres secciones anteriores describen errores de la reimplementación en Python: código que
+hace algo distinto de lo que su propia especificación pide. Esta sección describe algo
+cualitativamente distinto. **`cicflowmeter` no se equivoca aquí.** Las dos implementaciones
+—la de Java que generó el dataset y la de Python que se usará en vivo— miden la longitud de
+paquete de dos maneras igualmente defendibles, y el resultado es que la misma característica
+significa dos cosas distintas a cada lado del contrato.
+
+Esta divergencia constituye la regla **R2** del contrato de características.
+
+### Qué mide cada implementación
+
+| | CSV de CICIDS2017 (Java) | `cicflowmeter` (Python) |
+|---|---|---|
+| Definición | bytes de **payload** de transporte | longitud de la **trama completa** |
+| Ejemplo: SYN sin datos | 0 | 54 (14 Ethernet + 20 IP + 20 TCP) |
+
+La diferencia no es un desplazamiento constante que pueda deshacerse a posteriori: depende del
+tamaño de las cabeceras de cada paquete, que varía con las opciones TCP presentes. Debe
+resolverse en el punto de medición.
+
+### Evidencia sobre el dataset
+
+Las comprobaciones se ejecutaron sobre las 2 830 743 filas del dataset completo.
+
+**TEST C — ¿payload o trama?**
+
+| Observación | Valor |
+|---|---|
+| `Fwd Packet Length Min` por debajo de 54 bytes | 95,21 % |
+
+54 bytes es el mínimo físico de un paquete TCP sobre Ethernet. Ningún valor inferior es posible
+si la columna midiera tramas: mide payload.
+
+**TEST D — distribución de valores**
+
+| Valor de `Fwd Packet Length Min` | Frecuencia |
+|---|---|
+| 0 | 46,53 % |
+| **6** | **12,65 %** |
+| **2** | **5,00 %** |
+| resto | ~1,7 % cada uno, distribución plana |
+
+La distribución presenta exactamente tres picos: 0, 6 y 2. Que 6 y 2 destaquen sobre valores
+vecinos como 5 o 7 no tiene explicación posible en términos de datos de aplicación, que no
+tienen motivo alguno para preferir esos tamaños.
+
+### El relleno de Ethernet, y por qué solo son posibles 6, 2 y 0
+
+Ethernet exige una trama mínima de 60 bytes. Un paquete TCP sin opciones mide 54, de modo que
+viaja **rellenado con 6 bytes de ceros** hasta alcanzar el mínimo. Ese relleno no es información:
+es material de descarte que la capa de enlace añade y el receptor descarta.
+
+Las cabeceras TCP crecen en palabras de 4 bytes —el campo que indica su longitud se mide en
+palabras—, de modo que el tamaño de un paquete sin datos solo puede ser 54, 58, 62, 66… Los
+únicos rellenos posibles hasta 60 son, por tanto:
+
+| Opciones TCP | Tamaño del paquete | Relleno hasta 60 |
+|---|---|---|
+| ninguna | 54 | **6** |
+| 4 bytes | 58 | **2** |
+| 8 bytes o más | 62 o más | **0** (no se rellena) |
+
+Los tres picos del TEST D son exactamente esos tres valores. **El CICFlowMeter de Java cuenta
+el relleno de Ethernet como payload.**
+
+**TEST E — verdad conocida**
+
+La confirmación definitiva no procede de la distribución, sino de un caso cuya respuesta se
+conoce de antemano. Cuando una sonda de exploración alcanza un **puerto cerrado**, la máquina
+responde con un RST. Ese RST no transporta ningún dato: su payload real es, con certeza, cero.
+
+| `Bwd Packet Length Min` en 158 870 flujos PortScan | Frecuencia | Interpretación |
+|---|---|---|
+| **6** | **99,26 %** | El relleno se contabiliza como payload |
+| 0 | 0,44 % | Puertos **abiertos**: el SYN-ACK lleva opciones TCP, la trama supera 60 bytes y no se rellena |
+
+El 0,44 % de excepciones es lo que convierte la observación en prueba. Si el valor 6 procediera
+de un error de medición arbitrario, las excepciones aparecerían repartidas sin criterio. En
+cambio aparecen exactamente donde el mecanismo predice que deben aparecer: en los flujos cuya
+respuesta lleva opciones TCP y que, por tanto, no necesitan relleno. **Las excepciones confirman
+el mecanismo en lugar de contradecirlo.**
+
+### Decisión: replicar, no corregir
+
+Es la decisión opuesta a la del defecto 3, y responde al mismo criterio.
+
+La paridad se define **contra el CSV**, porque el CSV es aquello sobre lo que el modelo aprende.
+Un modelo entrenado con una columna que incluye el relleno de Ethernet ha aprendido, entre otras
+cosas, que una sonda contra un puerto cerrado presenta un valor de 6 en esa magnitud. Si el
+extractor en vivo emitiera el 0 matemáticamente correcto, el modelo recibiría en operación un
+valor que nunca vio durante el entrenamiento, precisamente en la clase de ataque que el sistema
+debe detectar.
+
+De ahí el criterio general, que conviene enunciar porque no es evidente:
+
+> Cuando la reimplementación en Python se aparta de la especificación, se **corrige** (defectos
+> 1, 2 y 3). Cuando quien se aparta de la definición estricta es el CSV de referencia, se
+> **replica** (R2). En ninguno de los dos casos la pregunta es «¿qué es correcto?», sino «¿qué
+> dice el CSV sobre el que aprende el modelo?».
+
+Discutiblemente, aquí quien mide mal es el Java: contar como datos un relleno que el receptor
+descarta no es defendible en términos de la definición de payload. Es irrelevante para esta
+decisión.
+
+### Las dos implementaciones candidatas
+
+Replicar el comportamiento exige elegir la forma de medición con cuidado, porque las dos
+candidatas naturales coinciden en el caso común y **difieren exactamente en el caso que
+importa**:
+
+| Opciones TCP | Trama | `len(pkt["TCP"].payload)` | Aritmética con `ip.len` |
+|---|---|---|---|
+| ninguna (RST pelado) | 60 | **6** | 0 |
+| MSS (4 bytes) | 60 | **2** | 0 |
+| MSS+SAckOK+TS (20 bytes) | 74 | **0** | 0 |
+
+`len(pkt["TCP"].payload)` reproduce la columna del CSV en los tres casos, porque `scapy` adjunta
+el relleno como una capa `Padding` dentro del payload de transporte. La aritmética a partir de
+`ip.len` —restar cabeceras a la longitud declarada en la cabecera IP— es **correcta**, devuelve
+el cero verdadero, y **por eso mismo rompería la paridad**. Se adopta la primera.
+
+### Corrección aplicada
+
+La medición se sustituye en dos puntos. El primero concentra toda la familia de estadísticos de
+longitud:
+
+```python
+# cicflowmeter/features/packet_length.py
+class PacketLength:
+    def get_packet_length(self, packet_direction=None) -> list:
+        return [len(packet) for packet, _ in self.flow.packets]     # -> trama
+```
+
+`get_max`, `get_min`, `get_total`, `get_mean`, `get_std`, `get_var` y `get_avg` la invocan todas,
+de modo que sustituirla alinea once posiciones del contrato de una sola vez. El segundo punto
+alimenta `flow_byts_s`:
+
+```python
+# cicflowmeter/features/flow_bytes.py
+class FlowBytes:
+    def get_bytes(self) -> int:
+        return sum(len(packet) for packet, _ in self.flow.packets)  # -> trama
+```
+
+Ambas se sustituyen por versiones que delegan en una función auxiliar del proyecto, la cual
+devuelve el payload de transporte del paquete. Al constructor de flujos solo llegan paquetes
+IPv4 TCP o UDP —`cicflowmeter` aplica el filtro `"ip and (tcp or udp)"` y descarta el resto en
+`flow_session.py`—, de modo que la función auxiliar cubre esos dos casos y devuelve 0 en
+cualquier otro.
+
+A diferencia del defecto 3, aquí **no existe la trampa de la referencia importada**: `flow.py`
+importa las clases, no sus métodos, de modo que sustituir un atributo del objeto de clase lo ven
+todos los que conservan una referencia a ella.
+
+`FlowBytes.get_bytes_sent()` y `FlowBytes.get_bytes_received()` también miden tramas y **se
+dejan intactas deliberadamente**: no alimentan ninguna de las 24 posiciones del contrato, de
+modo que sustituirlas ampliaría el alcance del parche sin beneficio alguno.
+
+### Magnitudes afectadas
+
+La regla R2 alcanza a trece de las veinticuatro posiciones del contrato: 3, 4, 5, 6, 7, 8, 9, 10,
+11, 12, 13, 14 y 22. Sobre el archivo de prueba sintético, el parche mueve **17 de las 82
+columnas** del CSV: las diez posiciones del contrato que el caso de prueba ejercita, más siete
+columnas derivadas que no forman parte de la interfaz (`pkt_len_max`, `pkt_len_min`,
+`pkt_size_avg`, `fwd_seg_size_avg`, `bwd_seg_size_avg`, `subflow_fwd_byts`, `subflow_bwd_byts`).
+
+Las columnas de dispersión del grupo —`fwd_pkt_len_std`, `bwd_pkt_len_std`, `pkt_len_std` y
+`pkt_len_var`— no se mueven sobre este archivo concreto, y conviene explicar por qué para que su
+inmovilidad no se interprete como que el parche no las alcanza. Ningún paquete del archivo
+sintético lleva opciones TCP, de modo que todos tienen exactamente 54 bytes de cabecera: la
+diferencia entre trama y payload es una constante, y tanto la varianza como la desviación típica
+son invariantes frente a una traslación. Sobre tráfico con opciones TCP, esas columnas sí se
+moverían.
+
+Las tasas de paquetes por segundo (`fwd_pkts_s`, `bwd_pkts_s`) no se ven afectadas, como
+corresponde: cuentan paquetes, no bytes.
+
+---
+
+## 7. Verificación de la corrección
 
 Se reprocesó el mismo archivo de prueba y se contrastó cada magnitud contra la verdad conocida:
 
@@ -504,9 +692,16 @@ Se reprocesó el mismo archivo de prueba y se contrastó cada magnitud contra la
 
 **Coincidencia exacta en todas las magnitudes comprobadas.**
 
+Las cifras de volumen de esta tabla —288, 234— están medidas **como trama completa**, que era la
+definición vigente cuando se verificó el defecto 2. Tras aplicar la regla R2 esa misma columna
+informa del payload, de modo que el archivo de evidencia versionado
+(`contract/smoke_flows.csv`) recoge hoy 18 en lugar de 234. La comprobación del defecto 2 sigue
+siendo válida: lo que verifica es que deja de contarse un paquete de más, y esa diferencia se
+observa con cualquiera de las dos definiciones.
+
 ---
 
-## 7. Reproducibilidad
+## 8. Reproducibilidad
 
 La verificación puede repetirse íntegramente con tres órdenes:
 
@@ -530,15 +725,19 @@ print(df[['tot_fwd_pkts','tot_bwd_pkts','totlen_fwd_pkts',
 "
 ```
 
-Resultado esperado — primera fila: `4  3  234  2  0.01  0.75`. Filas restantes:
-`1  1  54  1  0.01  1.00`.
+Resultado esperado — primera fila: `4  3  18  2  0.01  0.75`. Filas restantes:
+`1  1  0  1  0.01  1.00`.
+
+Las columnas de volumen se leen bajo la regla R2, es decir como payload: los 18 bytes de
+la primera fila son la petición HTTP, y los ceros de las sondas reflejan que ni el SYN ni
+el RST transportan datos.
 
 La versión de la librería queda fijada en `requirements.txt`, de modo que el comportamiento
 descrito y las correcciones aplicadas son reproducibles en cualquier instalación del sistema.
 
 ---
 
-## 8. Conclusión
+## 9. Conclusión
 
 Los tres defectos ilustran una asimetría relevante en el desarrollo de sistemas que dependen de
 mediciones.
@@ -557,3 +756,10 @@ La única defensa frente a un defecto silencioso consiste en contrastar la herra
 caso cuya respuesta se conoce de antemano. Ese principio motivó la construcción del archivo de
 prueba sintético y justifica la decisión de validar la herramienta antes de utilizarla, y no
 después de haber entrenado un modelo con ella.
+
+La divergencia de la sección 6 añade una lección distinta, y menos intuitiva. No todo desacuerdo
+entre dos implementaciones es un error que corregir. Cuando una de las dos es la que generó los
+datos sobre los que el modelo aprende, su comportamiento —acertado o no— forma parte de la
+definición de la característica. Corregirlo unilateralmente en el otro extremo no restaura la
+verdad: introduce exactamente el mismo desajuste que se pretendía evitar, con el agravante de
+parecer una mejora.

@@ -246,19 +246,38 @@ las cabeceras y el relleno de trama a partir del payload.
 **Aplica a:** posiciones 0, 15, 16, 17, 18, 19, 20.
 **Regla:** el extractor emite todos los valores temporales en microsegundos.
 
-### R2 — Tamaño de paquete medido como payload
+### R2 — Tamaño de paquete medido como payload, relleno de Ethernet incluido
 
 | | CSV | Extractor sin normalizar |
 |---|---|---|
-| Definición | bytes de payload | longitud de trama completa |
+| Definición | bytes de payload, **contando el relleno de Ethernet** | longitud de trama completa |
 | Evidencia | `Fwd Packet Length Max` mediana **0** en 33.150 flujos de PortScan | SYN sin datos → `54` (14 Ethernet + 20 IP + 20 TCP) |
 
 **Aplica a:** posiciones 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 22.
-**Regla:** el extractor calcula la longitud de paquete como longitud del payload,
-no de la trama.
+**Regla:** el extractor calcula la longitud de paquete como longitud del payload de
+transporte, no de la trama, **incluyendo el relleno** que la capa de enlace añade
+para alcanzar la trama mínima de 60 bytes.
+
+El matiz del relleno no es cosmético. Ethernet exige 60 bytes por trama y un paquete
+TCP sin opciones mide 54, de modo que viaja rellenado con 6 bytes de ceros. El
+CICFlowMeter de Java que generó el dataset **cuenta ese relleno como payload**, y el
+extractor debe replicarlo. Evidencia: en 158.870 flujos de PortScan, el RST con que
+un puerto cerrado responde —un paquete que no transporta ningún dato— informa de
+`Bwd Packet Length Min` = **6** en el 99,26 % de los casos, y de 0 en el 0,44 %
+restante, que son los puertos abiertos, cuyo SYN-ACK lleva opciones TCP y cuya trama
+supera los 60 bytes sin necesidad de relleno. Como las cabeceras TCP crecen en
+palabras de 4 bytes, los únicos valores de relleno posibles son 6, 2 y 0.
+
+**Esta precisión no modifica el contrato ni su versión.** No cambian el número de
+características, ni su orden, ni sus unidades, ni la lista de posiciones a las que R2
+se aplica: cambia únicamente el detalle de cómo se implementa la medición, que antes
+quedaba subespecificado. El contrato permanece en la versión 1.0.
 
 > La normalización se implementa modificando la **medición**, no restando una
-> constante a posteriori. La conversión es por tanto exacta.
+> constante a posteriori. La conversión es por tanto exacta. El detalle del relleno
+> es además la razón por la que restar una constante sería insuficiente: la
+> diferencia entre trama y payload depende de las opciones TCP de cada paquete.
+> El desarrollo completo está en `copilot/cicflowmeter_bugs.md`, sección 6.
 
 ### R3 — Valores no finitos
 
