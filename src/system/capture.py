@@ -2,14 +2,14 @@ from scapy.all import sniff, IP, TCP, UDP
 
 from src.capture.flow_manager import FlowManager
 from src.common import config
-from src.system.pipeline import (InferencePipeline, dummy_extractor, dummy_predictor)
+from src.system.pipeline import (InferencePipeline, dummy_predictor)
 
 
 class PacketCapture:
 
     def __init__(self):
         self.flow_manager = FlowManager()
-        self.inference_pipeline = InferencePipeline(extractor=dummy_extractor, predictor=dummy_predictor)
+        self.inference_pipeline = InferencePipeline(predictor=dummy_predictor)
 
     def process_manager(self, packet):
 
