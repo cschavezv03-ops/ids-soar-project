@@ -14,7 +14,7 @@ INTERNAL:
 Spec: contract/contract_characteristics.md
 """
 
-CONTRACT_VERSION = "1,0"
+CONTRACT_VERSION = "1.0"
 
 #Canonical names in frozen order. Position is part of the contract.
 
