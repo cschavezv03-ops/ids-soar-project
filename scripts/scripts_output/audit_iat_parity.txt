@@ -1,0 +1,106 @@
+Reading 8 files from data/raw/
+  Friday-WorkingHours-Afternoon-DDos.pcap_ISCX.csv       225,745 rows
+  Friday-WorkingHours-Afternoon-PortScan.pcap_ISCX.csv   286,467 rows
+  Friday-WorkingHours-Morning.pcap_ISCX.csv              191,033 rows
+  Monday-WorkingHours.pcap_ISCX.csv                      529,918 rows
+  Thursday-WorkingHours-Afternoon-Infilteration.pcap_ISCX.csv   288,602 rows
+  Thursday-WorkingHours-Morning-WebAttacks.pcap_ISCX.csv   170,366 rows
+  Tuesday-WorkingHours.pcap_ISCX.csv                     445,909 rows
+  Wednesday-workingHours.pcap_ISCX.csv                   692,703 rows
+
+Total 2,830,743 rows; 0 dropped as non-numeric
+
+========================================================================
+TEST A - whole-flow IAT on two-packet flows
+========================================================================
+two-packet flows with positive duration:     993,104
+three-packet control group:                  105,510
+
+Flow IAT Mean == Flow Duration (identity):    99.48%
+Flow IAT Mean is exactly zero:                 0.00%
+  ...in the three-packet control:              0.00%
+Flow IAT Max is exactly zero:                  0.00%
+Flow IAT Min is exactly zero:                  0.00%
+Flow IAT Std is exactly zero:                100.00%
+  (Std zero is CORRECT here - one sample has no spread)
+
+========================================================================
+TEST B - directional IAT on two-packet directions
+========================================================================
+Fwd IAT Mean
+  zero when Total Fwd Packets == 2:      0.82%  (n=1,071,198)
+  zero when Total Fwd Packets == 3:      0.00%  (n=204,077)
+Bwd IAT Mean
+  zero when Total Backward Packets == 2:      0.27%  (n=770,721)
+  zero when Total Backward Packets == 3:      0.00%  (n=34,335)
+
+========================================================================
+VERDICT - bug 3
+========================================================================
+The Java CICFlowMeter reports the real interval. Only the Python
+reimplementation collapses it to zero.
+Decision -> PATCH get_statistics (guard on len > 0, not len > 1).
+
+========================================================================
+TEST C - does the CSV measure payload or whole frames?
+========================================================================
+Fwd Packet Length Min   (n=2,830,743, direction not empty)
+  exactly 0:                 46.53%
+  below 54 bytes:            95.21%
+  minimum observed:               0
+
+Bwd Packet Length Min   (n=2,377,224, direction not empty)
+  exactly 0:                 41.41%
+  below 54 bytes:            62.59%
+  minimum observed:               0
+
+========================================================================
+TEST D - is Ethernet padding counted as payload?
+========================================================================
+Most frequent values (a real payload distribution has no isolated
+spike at 6; padding would produce exactly that):
+
+Fwd Packet Length Min
+         0   1,317,226   46.53%   <-- no payload
+         6     358,121   12.65%   <-- Ethernet padding
+         2     141,562    5.00%
+        44      49,159    1.74%
+        32      48,047    1.70%
+        42      45,713    1.61%
+        34      43,135    1.52%
+        48      42,919    1.52%
+        35      42,063    1.49%
+        45      40,896    1.44%
+
+Bwd Packet Length Min
+         0     984,348   41.41%   <-- no payload
+         6     351,704   14.79%   <-- Ethernet padding
+        48      39,388    1.66%
+        46      25,200    1.06%
+         2      21,924    0.92%
+       132      19,028    0.80%
+       102      18,594    0.78%
+        79      15,655    0.66%
+        60      13,029    0.55%
+        94      12,765    0.54%
+
+========================================================================
+TEST E - known truth: the RST answering a scan probe carries no data
+========================================================================
+PortScan flows with a backward packet: 158,870
+
+Bwd Packet Length Min
+         6     157,687   99.26%   <-- padding counted as payload
+         0         698    0.44%   <-- padding NOT counted
+         2         484    0.30%
+        48           1    0.00%
+
+========================================================================
+VERDICT - rule R2
+========================================================================
+The Java CICFlowMeter COUNTS Ethernet padding as payload.
+Reproduce it with scapy's len(pkt['TCP'].payload), which sees
+the filler too. Do NOT use IP-header arithmetic: it is correct
+and would therefore break parity.
+Decision -> REPLICATE, and document it as deliberate.
+
