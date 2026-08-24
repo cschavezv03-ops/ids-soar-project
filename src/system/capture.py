@@ -2,12 +2,14 @@ from scapy.all import sniff, IP, TCP, UDP
 
 from src.capture.flow_manager import FlowManager
 from src.common import config
+from src.system.pipeline import (InferencePipeline, dummy_extractor, dummy_predictor)
 
 
 class PacketCapture:
 
     def __init__(self):
         self.flow_manager = FlowManager()
+        self.inference_pipeline = InferencePipeline(extractor=dummy_extractor, predictor=dummy_predictor)
 
     def process_manager(self, packet):
 
@@ -89,9 +91,13 @@ class PacketCapture:
             print("Packets:", completed_flow.packet_count)
             print("Bytes:", completed_flow.total_bytes)
 
+            result = self.inference_pipeline.process_flow(
+                completed_flow
+            )
+
             print(
-                "Features:",
-                len(completed_flow.get_features())
+                "Inference:",
+                result
             )
 
             return
@@ -110,9 +116,13 @@ class PacketCapture:
             print("Packets:", flow.packet_count)
             print("Bytes:", flow.total_bytes)
 
+            result = self.inference_pipeline.process_flow(
+                completed_flow
+            )
+
             print(
-                "Features:",
-                len(flow.get_features())
+                "Inference:",
+                result
             )
 
         # ACTIVE TIMEOUT
@@ -130,11 +140,14 @@ class PacketCapture:
             print("Packets:", flow.packet_count)
             print("Bytes:", flow.total_bytes)
 
-            print(
-                "Features:",
-                len(flow.get_features())
+            result = self.inference_pipeline.process_flow(
+                completed_flow
             )
 
+            print(
+                "Inference:",
+                result
+            )
 
         # Active flow
 
@@ -148,6 +161,11 @@ class PacketCapture:
 
         if flow.packet_count % config.WINDOW_SIZE == 0:
 
+            result = self.inference_pipeline.process_flow(
+                flow
+            )
+
+
             features = flow.get_features()
 
             print("========== PARTIAL WINDOW ==========")
@@ -157,8 +175,8 @@ class PacketCapture:
             print("Bytes:", flow.total_bytes)
 
             print(
-                "Features:",
-                len(features)
+                "Inference:",
+                result
             )
 
     def start(self):
