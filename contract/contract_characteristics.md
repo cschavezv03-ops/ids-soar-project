@@ -468,3 +468,42 @@ La Tarea A2 valida la paridad entre el CSV y el extractor en vivo, característi
 característica, sobre capturas del laboratorio. Si alguna no alcanza la paridad, se
 retira del contrato, se sustituye y este documento pasa a la versión 1.1, notificando
 el cambio al componente B.
+
+## 10. Mapeo de etiquetas
+
+CICIDS2017 contiene 15 valores de etiqueta. El modelo se entrena sobre BENIGN y
+ocho familias de ataque; el resto se descarta antes del entrenamiento.
+
+Excluir no equivale a marcar como benigno: las filas se eliminan, de modo que el
+modelo nunca forma opinión sobre ellas. Marcarlas como benignas le enseñaría que
+ese tráfico es normal, y marcarlas como ataque añadiría ejemplos de escenarios
+ajenos a la demostración.
+
+| Etiqueta | Flujos | Destino |
+|---|---|---|
+| BENIGN | 2.273.097 | 0 |
+| DoS Hulk | 231.073 | 1 |
+| PortScan | 158.930 | 1 |
+| DDoS | 128.027 | 1 |
+| DoS GoldenEye | 10.293 | 1 |
+| FTP-Patator | 7.938 | 1 |
+| SSH-Patator | 5.897 | 1 |
+| DoS slowloris | 5.796 | 1 |
+| DoS Slowhttptest | 5.499 | 1 |
+| Bot | 1.966 | excluida — no es escenario de la demostración |
+| Web Attack (3 variantes) | 2.180 | excluida — no es escenario de la demostración |
+| Infiltration | 36 | excluida — volumen insuficiente para estratificar |
+| Heartbleed | 11 | excluida — volumen insuficiente para estratificar |
+
+**Resultado:** 2.826.550 flujos conservados, de los cuales 553.453 son ataques
+(19,58 %). Se descarta el 0,15 % del dataset. El desbalance resultante es de 4,1
+a 1, lo que justifica emplear F1 y PR-AUC en lugar de exactitud —un clasificador
+que respondiera siempre «normal» alcanzaría un 80,4 %— sin requerir remuestreo.
+
+**Nota de implementación.** Las etiquetas `Web Attack` contienen la secuencia de
+bytes `EF BF BD` (U+FFFD) grabada en el archivo original. La cadena resultante en
+Python depende de la codificación empleada al leer, por lo que estas etiquetas se
+identifican por prefijo ASCII y nunca por comparación literal. El mapeo es
+`intelligence.contract.label_to_target()`, que lanza una excepción ante cualquier
+etiqueta no listada: un valor por defecto contaminaría el conjunto de
+entrenamiento en silencio.
