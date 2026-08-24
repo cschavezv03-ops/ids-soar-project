@@ -59,7 +59,7 @@ Both directions are padded on capture. R2 as decided is enough:
 no compensation needed.
 
 ========================================================================
-portscan_lento.pcap
+portscan_lento_corrected.pcap
 ========================================================================
 INBOUND   -> 192.168.56.10
   packets:                            120
@@ -72,21 +72,21 @@ INBOUND   -> 192.168.56.10
 
 OUTBOUND  <- 192.168.56.10
   packets:                            118
-  frames under 60 bytes (unpadded):       88    74.58%
+  frames under 60 bytes (unpadded):        0     0.00%
   frame sizes seen (5 most common):
-        54 bytes        86   <-- unpadded
+        60 bytes        88
         86 bytes        30
-        58 bytes         2   <-- unpadded
   padding counted as payload by R2:
-         0 bytes       118  100.00%
+         0 bytes        30   25.42%
+         2 bytes         2    1.69%   <-- fake payload bytes, as in the CSV
+         6 bytes        86   72.88%   <-- fake payload bytes, as in the CSV
 
 ------------------------------------------------------------------------
-ASYMMETRY CONFIRMED. Inbound frames are padded, outbound ones are
-not. Contract positions 9-12 (bwd_pkt_len_*) would read 0 live
-where the CSV reads 6. R2 needs a live-side compensation.
+Both directions are padded on capture. R2 as decided is enough:
+no compensation needed.
 
 ========================================================================
-portscan_rapido.pcap
+portscan_rapido_corrected.pcap
 ========================================================================
 INBOUND   -> 192.168.56.10
   packets:                          1,149
@@ -99,18 +99,18 @@ INBOUND   -> 192.168.56.10
 
 OUTBOUND  <- 192.168.56.10
   packets:                            854
-  frames under 60 bytes (unpadded):      847    99.18%
+  frames under 60 bytes (unpadded):        0     0.00%
   frame sizes seen (5 most common):
-        54 bytes       845   <-- unpadded
+        60 bytes       847
         86 bytes         7
-        58 bytes         2   <-- unpadded
   padding counted as payload by R2:
-         0 bytes       854  100.00%
+         0 bytes         7    0.82%
+         2 bytes         2    0.23%   <-- fake payload bytes, as in the CSV
+         6 bytes       845   98.95%   <-- fake payload bytes, as in the CSV
 
 ------------------------------------------------------------------------
-ASYMMETRY CONFIRMED. Inbound frames are padded, outbound ones are
-not. Contract positions 9-12 (bwd_pkt_len_*) would read 0 live
-where the CSV reads 6. R2 needs a live-side compensation.
+Both directions are padded on capture. R2 as decided is enough:
+no compensation needed.
 
 ========================================================================
 ssh_bruteforce.pcap
@@ -144,7 +144,7 @@ Both directions are padded on capture. R2 as decided is enough:
 no compensation needed.
 
 ========================================================================
-syn_flood.pcap
+syn_flood_corrected.pcap
 ========================================================================
 INBOUND   -> 192.168.56.10
   packets:                            200
@@ -156,16 +156,15 @@ INBOUND   -> 192.168.56.10
 
 OUTBOUND  <- 192.168.56.10
   packets:                            100
-  frames under 60 bytes (unpadded):      100   100.00%
+  frames under 60 bytes (unpadded):        0     0.00%
   frame sizes seen (5 most common):
-        58 bytes       100   <-- unpadded
+        60 bytes       100
   padding counted as payload by R2:
-         0 bytes       100  100.00%
+         2 bytes       100  100.00%   <-- fake payload bytes, as in the CSV
 
 ------------------------------------------------------------------------
-ASYMMETRY CONFIRMED. Inbound frames are padded, outbound ones are
-not. Contract positions 9-12 (bwd_pkt_len_*) would read 0 live
-where the CSV reads 6. R2 needs a live-side compensation.
+Both directions are padded on capture. R2 as decided is enough:
+no compensation needed.
 
 ========================================================================
 synthetic_smoke.pcap
