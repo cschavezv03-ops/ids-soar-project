@@ -1,0 +1,183 @@
+========================================================================
+benigno_ssh.pcap
+========================================================================
+INBOUND   -> 192.168.56.10
+  packets:                            314
+  frames under 60 bytes (unpadded):        0     0.00%
+  frame sizes seen (5 most common):
+       102 bytes       281
+        66 bytes        21
+        74 bytes         1
+        99 bytes         1
+      1738 bytes         1
+  padding counted as payload by R2:
+         0 bytes       314  100.00%
+
+OUTBOUND  <- 192.168.56.10
+  packets:                            317
+  frames under 60 bytes (unpadded):        0     0.00%
+  frame sizes seen (5 most common):
+       102 bytes       276
+        66 bytes         8
+       110 bytes         5
+       318 bytes         3
+       150 bytes         3
+  padding counted as payload by R2:
+         0 bytes       317  100.00%
+
+------------------------------------------------------------------------
+Both directions are padded on capture. R2 as decided is enough:
+no compensation needed.
+
+========================================================================
+benigno_web.pcap
+========================================================================
+INBOUND   -> 192.168.56.10
+  packets:                              8
+  frames under 60 bytes (unpadded):        0     0.00%
+  frame sizes seen (5 most common):
+        66 bytes         6
+        74 bytes         1
+       143 bytes         1
+  padding counted as payload by R2:
+         0 bytes         8  100.00%
+
+OUTBOUND  <- 192.168.56.10
+  packets:                              6
+  frames under 60 bytes (unpadded):        0     0.00%
+  frame sizes seen (5 most common):
+        66 bytes         2
+        74 bytes         1
+      7306 bytes         1
+      1514 bytes         1
+       102 bytes         1
+  padding counted as payload by R2:
+         0 bytes         6  100.00%
+
+------------------------------------------------------------------------
+Both directions are padded on capture. R2 as decided is enough:
+no compensation needed.
+
+========================================================================
+portscan_lento.pcap
+========================================================================
+INBOUND   -> 192.168.56.10
+  packets:                            120
+  frames under 60 bytes (unpadded):        0     0.00%
+  frame sizes seen (5 most common):
+        60 bytes       120
+  padding counted as payload by R2:
+         2 bytes       118   98.33%   <-- fake payload bytes, as in the CSV
+         6 bytes         2    1.67%   <-- fake payload bytes, as in the CSV
+
+OUTBOUND  <- 192.168.56.10
+  packets:                            118
+  frames under 60 bytes (unpadded):       88    74.58%
+  frame sizes seen (5 most common):
+        54 bytes        86   <-- unpadded
+        86 bytes        30
+        58 bytes         2   <-- unpadded
+  padding counted as payload by R2:
+         0 bytes       118  100.00%
+
+------------------------------------------------------------------------
+ASYMMETRY CONFIRMED. Inbound frames are padded, outbound ones are
+not. Contract positions 9-12 (bwd_pkt_len_*) would read 0 live
+where the CSV reads 6. R2 needs a live-side compensation.
+
+========================================================================
+portscan_rapido.pcap
+========================================================================
+INBOUND   -> 192.168.56.10
+  packets:                          1,149
+  frames under 60 bytes (unpadded):        0     0.00%
+  frame sizes seen (5 most common):
+        60 bytes     1,149
+  padding counted as payload by R2:
+         2 bytes     1,147   99.83%   <-- fake payload bytes, as in the CSV
+         6 bytes         2    0.17%   <-- fake payload bytes, as in the CSV
+
+OUTBOUND  <- 192.168.56.10
+  packets:                            854
+  frames under 60 bytes (unpadded):      847    99.18%
+  frame sizes seen (5 most common):
+        54 bytes       845   <-- unpadded
+        86 bytes         7
+        58 bytes         2   <-- unpadded
+  padding counted as payload by R2:
+         0 bytes       854  100.00%
+
+------------------------------------------------------------------------
+ASYMMETRY CONFIRMED. Inbound frames are padded, outbound ones are
+not. Contract positions 9-12 (bwd_pkt_len_*) would read 0 live
+where the CSV reads 6. R2 needs a live-side compensation.
+
+========================================================================
+ssh_bruteforce.pcap
+========================================================================
+INBOUND   -> 192.168.56.10
+  packets:                             39
+  frames under 60 bytes (unpadded):        0     0.00%
+  frame sizes seen (5 most common):
+        66 bytes        12
+        74 bytes         3
+        89 bytes         3
+      1042 bytes         3
+       114 bytes         3
+  padding counted as payload by R2:
+         0 bytes        39  100.00%
+
+OUTBOUND  <- 192.168.56.10
+  packets:                             40
+  frames under 60 bytes (unpadded):        0     0.00%
+  frame sizes seen (5 most common):
+        66 bytes        17
+       150 bytes         8
+        74 bytes         3
+        88 bytes         3
+      1114 bytes         3
+  padding counted as payload by R2:
+         0 bytes        40  100.00%
+
+------------------------------------------------------------------------
+Both directions are padded on capture. R2 as decided is enough:
+no compensation needed.
+
+========================================================================
+syn_flood.pcap
+========================================================================
+INBOUND   -> 192.168.56.10
+  packets:                            200
+  frames under 60 bytes (unpadded):        0     0.00%
+  frame sizes seen (5 most common):
+        60 bytes       200
+  padding counted as payload by R2:
+         6 bytes       200  100.00%   <-- fake payload bytes, as in the CSV
+
+OUTBOUND  <- 192.168.56.10
+  packets:                            100
+  frames under 60 bytes (unpadded):      100   100.00%
+  frame sizes seen (5 most common):
+        58 bytes       100   <-- unpadded
+  padding counted as payload by R2:
+         0 bytes       100  100.00%
+
+------------------------------------------------------------------------
+ASYMMETRY CONFIRMED. Inbound frames are padded, outbound ones are
+not. Contract positions 9-12 (bwd_pkt_len_*) would read 0 live
+where the CSV reads 6. R2 needs a live-side compensation.
+
+========================================================================
+synthetic_smoke.pcap
+========================================================================
+(ignored 13 packets not involving 192.168.56.10)
+
+INBOUND   -> 192.168.56.10
+  no packets in this direction
+
+OUTBOUND  <- 192.168.56.10
+  no packets in this direction
+
+------------------------------------------------------------------------
+No outbound traffic in this capture: the question stays open.
+
