@@ -14,6 +14,7 @@ SEV_HIGH    = 0.90
 # --- Flow assembly ---
 ACTIVE_TIMEOUT = 120  # seconds
 IDLE_TIMEOUT   = 15
+WINDOW_SIZE = 100 
 
 # --- Firewall / containment ---
 IPTABLES_CHAIN    = "IDS_BLOCK"

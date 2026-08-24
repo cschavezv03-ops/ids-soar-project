@@ -14,17 +14,30 @@ class Flow:
     packet_count: int = 0
     total_bytes: int = 0
 
-
+    #forward direction
     forward_packets: int = 0
     forward_bytes: int = 0
+
+    #backward direction
     backward_packets: int = 0
     backward_bytes: int = 0
+
+    #timestamps
     timestamps: list = field(default_factory=list)
     timestamps_forward: list = field(default_factory=list)
     timestamps_backward: list = field(default_factory=list)
-    duration: float = 0.0
+
+    #size of payload
+    packet_sizes: list = field(default_factory=list)
     packet_sizes_forward: list = field(default_factory=list)
     packet_sizes_backward: list = field(default_factory=list)
+
+    #size of package forward that have data
+
+    fwd_act_data_pkts: int = 0
+
+    #tcp flags only for the close logic
+    
     syn_count: int = 0
     ack_count: int = 0
     fin_count: int = 0
@@ -55,8 +68,8 @@ class Flow:
             and dst_port == self.dst_port
         )
 
-
-    #Para el ritmo temporal
+    
+    #for the duration
 
     def calculate_duration(self):
         if len(self.timestamps) < 2:
@@ -64,19 +77,20 @@ class Flow:
 
         return self.timestamps[-1] - self.timestamps[0]
 
+    #IAT
 
     def calculate_iat(self):
+        
         if len(self.timestamps) < 2:
             return []
 
-        iat = []
-
-        for i in range(1, len(self.timestamps)):
-            iat.append(self.timestamps[i] - self. timestamps[i - 1])
-
-        return iat
+        return [
+            self.timestamps[i] - self. timestamps[i - 1]
+            for i in range(1, len(self.timestamps))    
+        ]
 
     def calculate_iat_mean(self):
+
         iat = self. calculate_iat()
 
         if not iat:
@@ -85,6 +99,7 @@ class Flow:
         return sum(iat) / len (iat)
 
     def calculate_iat_std(self):
+        
         iat = self.calculate_iat()
 
         if len(iat) < 2:
@@ -96,19 +111,37 @@ class Flow:
 
         return variance ** 0.5
 
+    def calculate_iat_max(self):
+
+        iat = self.calculate_iat()
+
+        if not iat:
+            return 0.0
+
+        return max(iat)
+
+
+    def calculate_iat_min(self):
+
+        iat = self.calculate_iat()
+
+        if not iat:
+            return 0.0
+
+        return min(iat)
+
+    #iat forward
+        
     def calculate_iat_forward(self):
 
         if len(self.timestamps_forward) < 2:
             return []
+        
+        return [
+            self.timestamps_forward[i] - self. timestamps_forward[i - 1]
+            for i in range(1, len(self.timestamps_forward))    
+        ]
 
-        iat = []
-
-        for i in range(1, len(self.timestamps_forward)):
-            iat.append(
-                self.timestamps_forward[i] - self.timestamps_forward[i - 1]
-            )
-
-        return iat
 
     def calculate_iat_forward_mean(self):
 
@@ -119,19 +152,17 @@ class Flow:
 
         return sum(iat) / len(iat)
 
+    #iat backward
+
     def calculate_iat_backward(self):
 
         if len(self.timestamps_backward) < 2:
             return []
-
-        iat = []
-
-        for i in range(1, len(self.timestamps_backward)):
-            iat.append(
-                self.timestamps_backward[i] - self.timestamps_backward[i - 1]
-            )
-
-        return iat
+        
+        return [
+            self.timestamps_backward[i] - self. timestamps_backward[i - 1]
+            for i in range(1, len(self.timestamps_backward))    
+        ]
 
     def calculate_iat_backward_mean(self):
         
@@ -142,6 +173,8 @@ class Flow:
 
         return sum(iat) / len(iat)
 
+    #packet rate
+
     def calculate_packets_per_second(self):
         duration = self.calculate_duration()
 
@@ -150,7 +183,14 @@ class Flow:
 
         return self.packet_count / duration 
 
-#Para los tamanios de los paquetes
+    #forward packet length
+
+    def calculate_forward_packet_size_min(self):
+
+        if not self.packet_sizes_forward:
+            return 0.0
+
+        return min(self.packet_sizes_forward)
     
     def calculate_forward_packet_size_mean(self):
 
@@ -176,7 +216,15 @@ class Flow:
             return 0.0
 
         return max(self.packet_sizes_forward)
-    
+
+    #backward packet length
+
+    def calculate_backward_packet_size_min(self):
+
+        if not self.packet_sizes_backward:
+            return 0.0
+
+        return min(self.packet_sizes_backward)
 
     def calculate_backward_packet_size_mean(self):
 
@@ -203,20 +251,27 @@ class Flow:
 
         return max(self.packet_sizes_backward)
 
-    #Relacion bytes bajada/subida
+    #all packet length
 
-    def calculate_byte_ratio(self):
+    def calculate_packet_size_mean(self):
 
-        if self.forward_bytes == 0:
+        if not self.packet_sizes:
             return 0.0
 
-        return self.backward_bytes / self.forward_bytes
+        return sum(self.packet_sizes) / len(self.packet_sizes)
 
-    def calculate_mean_packet_size(self):
-        if self.packet_count == 0:
+    def calculate_packet_size_std(self):
+
+        if len(self.packet_sizes) < 2:
             return 0.0
 
-        return self.total_bytes / self.packet_count
+        mean = self.calculate_packet_size_mean()
+
+        variance = sum((x - mean) ** 2 for x in self.packet_sizes) / len (self.packet_sizes)
+
+        return variance ** 0.5
+
+    #bytes per second
 
     def calculate_bytes_per_second(self):
         duration = self.calculate_duration()
@@ -228,24 +283,42 @@ class Flow:
 
     
 
-    def add_packet(self, src_ip, src_port, dst_ip, dst_port, packet_size, timestamps, tcp_flags = None):
+    def add_packet(self, src_ip, src_port, dst_ip, dst_port, packet_size, timestamp, tcp_flags =None, payload_size =None):
+
+        if payload_size is None:
+            payload_size = packet_size
+
         self.packet_count += 1
         self.total_bytes += packet_size
 
-        self.timestamps.append(timestamps)   
+        self.timestamps.append(timestamp)
+        self.packet_sizes.append(packet_size)
 
-        if self.is_forward(src_ip, src_port, dst_ip, dst_port):
+        if self.is_forward(
+            src_ip,
+            src_port,
+            dst_ip,
+            dst_port,
+        ):
+
             self.forward_packets += 1
             self.forward_bytes += packet_size
-            self.timestamps_forward.append(timestamps)
+
+            self.timestamps_forward.append(timestamp)
             self.packet_sizes_forward.append(packet_size)
+
+            if payload_size > 0:
+                self.fwd_act_data_pkts += 1
+
         else:
+
             self.backward_packets += 1
             self.backward_bytes += packet_size
-            self.timestamps_backward.append(timestamps)
+
+            self.timestamps_backward.append(timestamp)
             self.packet_sizes_backward.append(packet_size)
 
-#banderas tcp
+        #tcp flags only for logic
 
         if tcp_flags and "S" in tcp_flags:
             self.syn_count += 1
@@ -255,46 +328,91 @@ class Flow:
 
         if tcp_flags and "F" in tcp_flags:
             self.fin_count += 1
-        
+
         if tcp_flags and "R" in tcp_flags:
-            self.rst_count += 1   
+            self.rst_count += 1
 
         if tcp_flags and "P" in tcp_flags:
-            self.psh_count += 1   
+            self.psh_count += 1
+
+        
+
+
+
 
     def get_features(self):
+
+        # in ms
+        flow_duration = (
+            self.calculate_duration() * 1_000
+        )
+
+        # in ms
+        flow_iat_mean = (
+            self.calculate_iat_mean() * 1_000
+        )
+
+        flow_iat_std = (
+            self.calculate_iat_std() * 1_000
+        )
+
+        flow_iat_max = (
+            self.calculate_iat_max() * 1_000
+        )
+
+        flow_iat_min = (
+            self.calculate_iat_min() * 1_000
+        )
+
+        fwd_iat_mean = (
+            self.calculate_iat_forward_mean()
+            * 1_000
+        )
+
+        bwd_iat_mean = (
+            self.calculate_iat_backward_mean()
+            * 1_000
+        )
+
         return [
-            # 1-5: duración y volumen
-            self.calculate_duration(),
+
+            # 0
+            flow_duration,
+
+            # 1-4
             self.forward_packets,
             self.backward_packets,
             self.forward_bytes,
             self.backward_bytes,
 
-            # 6-11: tamaños de paquetes
+            # 5-8
+            self.calculate_forward_packet_size_min(),
             self.calculate_forward_packet_size_mean(),
             self.calculate_forward_packet_size_std(),
             self.calculate_forward_packet_size_max(),
+
+            # 9-12
+            self.calculate_backward_packet_size_min(),
             self.calculate_backward_packet_size_mean(),
             self.calculate_backward_packet_size_std(),
             self.calculate_backward_packet_size_max(),
 
-            # 12-16: ritmo temporal
-            self.calculate_iat_mean(),
-            self.calculate_iat_std(),
-            self.calculate_iat_forward_mean(),
-            self.calculate_iat_backward_mean(),
+            # 13-14
+            self.calculate_packet_size_mean(),
+            self.calculate_packet_size_std(),
+
+            # 15-20
+            flow_iat_mean,
+            flow_iat_std,
+            flow_iat_max,
+            flow_iat_min,
+            fwd_iat_mean,
+            bwd_iat_mean,
+
+            # 21-22
             self.calculate_packets_per_second(),
-
-            # 17-21: TCP flags
-            self.syn_count,
-            self.ack_count,
-            self.fin_count,
-            self.rst_count,
-            self.psh_count,
-
-            # 22-24: simetría y tasas
-            self.calculate_byte_ratio(),
-            self.calculate_mean_packet_size(),
             self.calculate_bytes_per_second(),
+
+            # 23
+            self.fwd_act_data_pkts,
         ]

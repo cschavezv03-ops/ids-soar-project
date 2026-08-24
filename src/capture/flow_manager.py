@@ -59,7 +59,8 @@ class FlowManager:
             protocol,
             packet_size,
             timestamp,
-            tcp_flags=None
+            tcp_flags=None,
+            payload_size= None
     ):
 
         flow = self.get_or_create_flow(
@@ -77,7 +78,8 @@ class FlowManager:
             dst_port,
             packet_size,
             timestamp,
-            tcp_flags
+            tcp_flags,
+            payload_size
         )
 
         key = flow.key()
