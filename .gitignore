@@ -1,8 +1,12 @@
 .venv/
-__pychache__/
+__pycache__/
 *.pyc
+.ipynb_checkpoints
 data/
 *.pcap
-*.csv
+*.pcapng
 *.db
 evidence/*.tmp
+models/*.pkl
+models/*.joblib
+*.db
