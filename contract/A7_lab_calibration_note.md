@@ -608,23 +608,49 @@ decirlo sin adornos:
 4. **La fuerza bruta SSH es el hueco abierto.** Es recuperable (la forma coincide,
    falla el ritmo), pero hoy no está resuelto.
 
+
+### 13.1 Decisiones tomadas sobre los dos huecos
+
+**`slowloris` → SOAR, y NO se fabrica tráfico a medida.** El experimento de §12.2
+mostró que el modelo detectaría un `slowloris` al 97 % **si** el servidor no
+respondiera y las conexiones enviaran lo mínimo (como en CICIDS2017). Se **descarta**
+hacer esa captura: exige un servidor mudo artificial (un `iptables` que descarte la
+respuesta) y conexiones recortadas, es decir, construir en el laboratorio un flujo con
+las características del dataset. Eso fuerza la demo y no demuestra generalización.
+`slowloris` abre 486 conexiones/10 s, así que **lo cubre la regla de tasa del SOAR**
+sin artificios. El argumento del valor del modelo lo lleva el **escaneo lento** (1
+conexión/10 s, que el SOAR no puede ver y el modelo detecta al 66 %), que es un caso
+limpio y no requiere configurar nada.
+
+**Fuerza bruta SSH → regla de tasa en el puerto :22 (nueva).** Ni el modelo (0,12) ni
+la regla de tasa general la detectan. Pero el tráfico benigno del laboratorio tiene
+**cero conexiones al puerto 22**, así que una regla que cuente conexiones nuevas al
+:22 por IP, con umbral bajo (10/60 s), la detecta sin falsos positivos. Es el enfoque
+`fail2ban` a nivel de red. La captura actual queda al borde (9/60 s con `hydra -t 4`),
+así que se pide recapturar con `MaxAuthTries 2` + `hydra -t 16` para que genere ~125
+conexiones en vez de 30. El modelo se da por perdido para SSH: falla por ritmo y era
+su familia más frágil. Requerimientos completos en
+`Documents/requerimientos_frank_v4.md`.
+
 ---
 
 ## 14. Lo que sigue abierto
 
 Por orden de lo que bloquea la demo:
 
-1. **Fuerza bruta SSH** — §12.3. El único escenario que hoy no cubre nadie. Es
-   recuperable (los tamaños coinciden, falla el ritmo): probar `hydra -t 16`.
-2. **Bajar `RATE_FLOWS_THRESHOLD` a 400** en el SOAR — §12.2, para que la regla
-   de tasa capture `slowloris` (486/10 s).
-3. **Implementar la regla de tasa por IP en el SOAR** — §6. Cubre inundación
-   SYN, inundación HTTP y ataque lento.
+1. **Regla de tasa general por IP en el SOAR** — umbral **400 / 10 s** (§6, §13.1).
+   Cubre inundación SYN, inundación HTTP, escaneo rápido y `slowloris`.
+2. **Regla de tasa en el puerto :22** — umbral **10 / 60 s** (§13.1). Cubre la
+   fuerza bruta SSH; el benigno del lab da 0 conexiones al :22.
+3. **Recapturar la fuerza bruta SSH** — `MaxAuthTries 2` + `hydra -t 16`, para que
+   la regla del punto 2 dispare con margen (§13.1).
 4. **Que la ventana parcial deje de abrir casos** — §8. Hoy solo se dispara
    sobre tráfico benigno.
 5. **Regla de apertura de caso** — cuántos flujos de una IP abren un caso.
 6. **Fusionar `config.py`** conservando las dos mitades — §8.
 7. **Medir el desajuste de las ventanas temporales** antes de activarlas — §8.
+
+Los puntos 1–3 están en `Documents/requerimientos_frank_v4.md`.
 
 **Lo que ya NO queda pendiente** (cerrado en la tercera pasada): capturar
 `slowloris`, capturar la inundación HTTP, y repetir la fuerza bruta SSH. Las tres
