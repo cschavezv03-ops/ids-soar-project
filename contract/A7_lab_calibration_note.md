@@ -632,6 +632,15 @@ conexiones en vez de 30. El modelo se da por perdido para SSH: falla por ritmo y
 su familia más frágil. Requerimientos completos en
 `Documents/requerimientos_frank_v4.md`.
 
+**Objeción prevista (y su respuesta medida): ¿bloquearía un SSH legítimo?** No. La
+regla tiene umbral (>10 conexiones al :22 por IP en 60 s), no bloquea una conexión
+suelta. Medido: un login SSH benigno es **1 conexión** (y dura 12,7 s con 631 paquetes
+de sesión real); la fuerza bruta son **30** (→ ~125 tras recaptura). Un admin que
+falla y reconecta 2-3 veces sigue diez veces por debajo del umbral. La **duración no
+distingue** —`hydra` mantiene la conexión ~31 s, más que el login benigno—, así que la
+regla se apoya solo en el conteo, que sí separa. Refuerzo: la `WHITELIST` de
+`config.py` exime a las IPs de administración conocidas.
+
 ---
 
 ## 14. Lo que sigue abierto
