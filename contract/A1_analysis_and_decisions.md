@@ -373,7 +373,13 @@ No se descartan (son útiles) pero **el contrato define su tratamiento**: infini
 NaN se convierten en 0. Esto tiene que estar escrito, no improvisado en el
 preprocesado, o entrenamiento y demo harán cosas distintas.
 
-**22 filas tienen `Flow Duration` negativa.** Corruptas. Se eliminan en A3.
+**2.886 filas tienen algún valor negativo finito.** Corruptas. Se eliminan en A3.
+
+> **Corregido tras A3.** Esta sección decía «22 filas tienen `Flow Duration`
+> negativa». Las dos mitades de la frase estaban mal: sobre los 8 CSV completos son
+> **115** las de `Flow Duration` —el 22 salió de una ejecución con `--sample`— y el
+> total real es **2.886**, con el grueso en `Flow IAT Min`, columna que esta auditoría
+> nunca llegó a probar. Ver §11.3 y `contract/A3_preprocessing_note.md` §2.1.
 
 ---
 
@@ -553,7 +559,7 @@ explícitamente. Es la única forma de romper la circularidad.
 
 ## 11. Errores nuestros registrados
 
-Para el registro de copiloto y por honestidad metodológica, dos afirmaciones que se
+Para el registro de copiloto y por honestidad metodológica, tres afirmaciones que se
 hicieron durante el análisis y resultaron falsas:
 
 1. **«`RST Flag Count` es constante en cero.»** Falso. Hay 686 flujos con RST=1
@@ -563,6 +569,19 @@ hicieron durante el análisis y resultaron falsas:
    F1 = 0,000 usando solo las banderas para ese problema. El error fue mirar medias
    condicionales por clase sin comprobar la condicional inversa.
 
-Ambos se detectaron al auditar el dataset completo en vez de una muestra parcial.
-La lección práctica: **auditar sobre los 8 archivos completos, no sobre `nrows=200000`
-de uno solo.** Por eso `audit_dataset.py` corre sobre todo por defecto.
+3. **«22 filas tienen `Flow Duration` negativa.»** Falso por partida doble, detectado
+   en A3. Son **115**: el 22 se midió con `audit_dataset.py --sample` (60.000 filas
+   por archivo, ~17% del dataset), y está reproducido — la misma consulta sobre esa
+   muestra devuelve exactamente 22. Y, más importante, el total de filas corruptas es
+   **2.886**: la auditoría solo probó negativos en `Flow Duration`, la columna que
+   alguien sospechaba, y las otras **2.771** están sobre todo en `Flow IAT Min`, que
+   nadie miró. Lo que las destapó fue derivar la regla del contrato en lugar de la
+   sospecha: `validate()` ya declaraba las 24 posiciones como no negativas, así que
+   A3 comprobó las 24.
+
+Los tres se detectaron al auditar el dataset completo en vez de una muestra parcial.
+La lección práctica, en dos partes: **auditar sobre los 8 archivos completos, no sobre
+`nrows=200000` de uno solo** —por eso `audit_dataset.py` corre sobre todo por
+defecto— y, la que añade el tercero, **comprobar la propiedad allí donde el contrato
+la declara, no solo donde uno espera encontrarla rota.** Una muestra da la cifra mal;
+mirar una sola columna no da la cifra en absoluto.

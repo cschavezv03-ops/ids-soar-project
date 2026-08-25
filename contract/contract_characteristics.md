@@ -290,8 +290,36 @@ preprocesamiento del dataset y en el extractor en vivo.
 
 ### R4 — Filas corruptas
 
-22 flujos presentan `Flow Duration` negativa. Se eliminan durante el preprocesamiento
-del dataset (Tarea A3). No requieren tratamiento en vivo.
+**2.886 flujos** presentan algún valor negativo finito. Se eliminan durante el
+preprocesamiento del dataset (Tarea A3). No requieren tratamiento en vivo: offline
+se puede descartar una fila; en vivo llega un flujo y hay que clasificarlo.
+
+**Aplica a:** las 24 posiciones. La regla se deriva del contrato, no de una columna:
+`validate()` declara las 24 como magnitudes no negativas (`NON_NEGATIVE_IDX` es el
+rango completo), de modo que un negativo en cualquiera de ellas es una fila corrupta.
+
+**Solo negativos finitos.** El `−inf` es asunto de R3, no de R4, y el orden es
+R4 → R3: al revés, `sanitize` convertiría el `−inf` en 0.0 y la fila corrupta pasaría
+a parecer impecable.
+
+Desglose por columna sobre los 8 CSV completos:
+
+| Columna | Filas |
+|---|---|
+| `Flow IAT Min` | 2.886 |
+| `Flow Duration` | 115 |
+| `Flow IAT Mean` | 115 |
+| `Flow IAT Max` | 115 |
+| `Flow Packets/s` | 115 |
+| `Flow Bytes/s` | 85 |
+
+> **Corrección respecto de la versión previa de este documento**, que declaraba 22
+> filas, todas vía `Flow Duration`. Aquella cifra procedía de una ejecución de
+> `audit_dataset.py --sample` y de comprobar los negativos en una sola columna. Sobre
+> el dataset completo y las 24 posiciones son 2.886. **No modifica el contrato ni su
+> versión:** no cambian el número de características, ni su orden, ni sus unidades,
+> ni las posiciones a las que R4 se aplica. Se corrige un dato de magnitud, no una
+> regla. Detalle en `contract/A3_preprocessing_note.md`, sección 2.1.
 
 ---
 
