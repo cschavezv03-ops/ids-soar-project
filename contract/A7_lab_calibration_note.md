@@ -25,7 +25,7 @@
 
 ---
 
-## 0. Las dos pasadas
+## 0. Las tres pasadas
 
 | | Primera pasada | Segunda pasada |
 |---|---|---|
@@ -33,7 +33,13 @@
 | Flujos benignos | **2** | **12.029** |
 | Offload de la tarjeta | activo (tramas de 7.240 B) | **desactivado** (máx. 1514 B) |
 | Módulo | `lab_calibration.py` | `recalibrate.py` |
-| Resultado | diagnóstico, sin poder decidir | **decisión tomada** |
+| Resultado | diagnóstico, sin poder decidir | **umbral fijado** |
+
+Y una **tercera pasada** (§12), sobre las capturas `pcap_v2.1` que Frank tomó para
+los cuatro escenarios de la demo: inundación HTTP, `slowloris`, cuerpo lento y
+fuerza bruta SSH. Módulo `validate_lab_attacks.py`. Resultado: **el umbral no
+cambia, y el modelo solo detecta el escaneo** — el resto lo cubre el SOAR, salvo
+la fuerza bruta SSH (§13).
 
 La primera pasada encontró el problema y no pudo arreglarlo: con 2 flujos
 benignos el intervalo de confianza sobre la tasa de falsos positivos iba de
@@ -272,11 +278,15 @@ Hoy no existe ningún parámetro de tasa. Habría que añadir algo como:
 ```python
 # --- Correlación por IP (componente B) ---
 RATE_WINDOW_SECONDS   = 10    # ventana de conteo
-RATE_FLOWS_THRESHOLD  = 500   # conexiones nuevas por IP -> caso ALTO
+RATE_FLOWS_THRESHOLD  = 400   # conexiones nuevas por IP -> caso ALTO
 ```
 
-Los valores salen de la tabla de arriba. **Son de Frank**, no míos: los mido y
-los propongo, los fija quien implementa la correlación.
+**El 400 es una corrección de la tercera pasada.** Propuse 500 aquí, pero luego se
+midió que `slowloris` abre 486 conexiones por ventana (§12.2), y con 500 quedaría
+fuera. Con el máximo benigno en 300, un umbral de **400** separa `slowloris` (486)
+del ruido benigno con margen de 100 a cada lado. Es más estrecho que para el SYN
+flood, pero funciona. **Son de Frank**, no míos: los mido y los propongo, los fija
+quien implementa la correlación.
 
 ---
 
@@ -339,6 +349,11 @@ Además hay una razón para esperar que transfiera bien: CICIDS2017 generó su
 `slowloris` con **la misma herramienta** que usaríamos nosotros, a diferencia de
 la inundación, donde el dataset usó un flood HTTP contestado y nosotros un SYN
 al vacío.
+
+> **⚠ REFUTADO por la tercera pasada (§12).** Esta predicción resultó falsa en
+> sus dos mitades. El modelo detecta el `slowloris` real al **0 %**, y la regla
+> de tasa del SOAR **sí** puede ayudar. Las dos razones están en §12.2. Se
+> conserva el texto para que se vea qué se predijo y qué se midió.
 
 ---
 
@@ -461,31 +476,165 @@ pregunta en un sentido o en otro:
 Cualquiera de los dos resultados es publicable. Que la predicción sea falsable es
 justamente lo que la hace útil.
 
+> **⚠ MEDIDO en la tercera pasada (§12).** Ni lo uno ni lo otro del todo: el
+> modelo detecta la inundación HTTP al **3,8 % por flujo**, no al 99 %, pero
+> como **caso** se detecta con certeza (958 de 25.068 flujos superan el corte).
+> El detalle en §12.1.
+
 ---
 
-## 10. Lo que sigue abierto
+## 12. Tercera pasada (v2.1) — el modelo contra los ataques que faltaban
+
+Frank capturó las cuatro que pedimos: inundación HTTP contestada, `slowloris`,
+cuerpo lento y fuerza bruta SSH repetida. Todas con el offload desactivado
+(trama máxima 1514 B). **El resultado obliga a corregir dos predicciones que esta
+misma nota había hecho razonando desde CICIDS2017.**
+
+Veredicto al punto de operación vigente (0,50):
+
+| Captura | Familia | Flujos | p50 | máx | Det. 0,50 | Veredicto |
+|---|---|---|---|---|---|---|
+| `http_flood_ab` | DDoS | 25.068 | 0,01 | 1,00 | 3,8 % | Parcial (por caso) |
+| `slowloris` | DoS slowloris | 513 | 0,00 | 0,07 | 0,0 % | **No detectado** |
+| `slowbody_ab` | DoS Slowhttptest | 511 | 0,00 | 0,04 | 0,0 % | **No detectado** |
+| `ssh_bruteforce_ab` | SSH-Patator | 30 | 0,12 | 0,15 | 0,0 % | **No detectado** |
+
+**El umbral no se toca.** Ninguna se separa del tráfico benigno bajando el
+corte: a 0,10, `slowloris` y `slowbody` siguen en 0 % mientras el tráfico
+benigno ya marca 10 % de falsos positivos. No es un problema de umbral.
+
+### 12.1 Inundación HTTP — la predicción de §9, medida
+
+Predije que se detectaría «probablemente al 99 %», por analogía con el `DDoS` de
+CICIDS2017. **Medido: 3,8 % por flujo.** Nuestra inundación `ab` es mucho más
+corta (42 ms de mediana frente a 1,9 s) y con menos respuesta del servidor, así
+que cae por debajo de donde vive el `DDoS`.
+
+**Pero como caso se detecta con certeza:** 958 de sus 25.068 flujos superan el
+corte, y con la agrupación del SOAR la probabilidad de perder el ataque entero es
+0. Y además su tasa por IP es **19.203 conexiones / 10 s**, muy por encima de la
+regla de tasa. **Queda cubierta dos veces**, por el modelo (a nivel de caso) y
+por el SOAR.
+
+> La afirmación correcta no es «el modelo detecta inundaciones HTTP», sino **«las
+> detecta a nivel de caso, no de flujo»**. Es una concesión menor que «no las
+> detecta», y ahora está medida, no inferida.
+
+### 12.2 `slowloris` y cuerpo lento — la predicción de §7.2, refutada entera
+
+Había escrito que `slowloris` era donde el modelo mejor rinde y donde el SOAR no
+podía ayudar. **Las dos mitades son falsas**, y las dos por la misma causa: el
+servidor **responde**.
+
+| `slowloris` | Laboratorio | CICIDS2017 |
+|---|---|---|
+| `totlen_bwd_pkts` | 453 | **0** |
+| `bwd_pkt_len_mean` | 64,71 | **0** |
+| `pkt_len_std` | 120,58 | 4,62 |
+
+El `slowloris` de CICIDS2017 golpeó un servidor que **se quedaba mudo** —cero
+bytes de vuelta—, y el modelo aprendió esa forma. Nuestra víctima corre Apache,
+que **contesta con un 400** a la petición a medias, así que el flujo lleva bytes
+de respuesta. Misma herramienta, comportamiento del servidor distinto → vector
+distinto → el modelo no lo reconoce.
+
+Y la otra mitad: **`slowloris` abre muchas conexiones** —486 por IP cada 10 s en
+esta captura—, no pocas. Eso **sí** lo ve la regla de tasa del SOAR. La detección
+del ataque lento acaba siendo trabajo del SOAR, no del modelo — justo lo
+contrario de lo que predije.
+
+Esto tiene una consecuencia para la regla de tasa (§6): con `slowloris` a 486 y
+el máximo benigno en 300, el umbral de **500 que propuse deja fuera el
+`slowloris`**. Habría que bajarlo a **~400** (300 benigno < 400 < 486 slowloris),
+con el aviso de que el margen es más estrecho que para el SYN flood.
+
+### 12.3 Fuerza bruta SSH — la captura salió bien, y aun así 0,12
+
+La nueva captura sí contiene el ataque: 606 intentos SSH reales, 30 flujos con
+sesiones completas (frente a los 28 con basura de la v2.0). Y sus **tamaños de
+paquete son casi idénticos** a los de CICIDS2017:
+
+| `ssh_bruteforce_ab` | Laboratorio | CICIDS2017 | ratio |
+|---|---|---|---|
+| `tot_fwd_pkts` | 21 | 21 | 1,00 |
+| `totlen_bwd_pkts` | 2.522 | 2.745 | 0,92 |
+| `bwd_pkt_len_mean` | 84,07 | 85,78 | 0,98 |
+| `fwd_act_data_pkts` | 16 | 16 | 1,00 |
+| **`flow_duration`** | 31.163.142 | 12.044.221 | **2,59** |
+| **`flow_iat_mean`** | 626.420 | 231.353 | **2,71** |
+| **`flow_pkts_s`** | 1,63 | 4,41 | 0,37 |
+
+**Los tamaños coinciden; los tiempos no.** Nuestra fuerza bruta es 2,6 veces más
+lenta por flujo. `SSH-Patator` fue siempre la familia más frágil del modelo (A1
+§9 la medía a 0,50), la única que se apoyaba en características que descartamos por
+huella de entorno. Que un desajuste de ritmo la tumbe del todo es coherente con
+esa fragilidad.
+
+Es el caso más recuperable de los tres: la forma es correcta, solo el ritmo
+difiere. Un `hydra -t 16` (más paralelo, intentos más rápidos) podría acercarlo.
+Pero es incierto, y son solo 30 flujos.
+
+---
+
+## 13. Qué significa esto para la demo
+
+Estado real de los cuatro escenarios, ya medido sobre tráfico propio:
+
+| # | Escenario | ¿Modelo? | ¿SOAR (tasa)? | Cubierto |
+|---|---|---|---|---|
+| 1 | Escaneo (`nmap`) | ✅ 56–66 % | ❌ (lento: 1/10 s) | **Sí, modelo** |
+| 2 | Inundación SYN (`hping3`) | ❌ 0 % | ✅ (9.473/10 s) | **Sí, SOAR** |
+| 2b | Inundación HTTP (`ab`) | ⚠ por caso | ✅ (19.203/10 s) | **Sí, ambos** |
+| 3 | Ataque lento (`slowloris`) | ❌ 0 % | ✅ (486/10 s, umbral a 400) | **Sí, SOAR** |
+| 4 | Fuerza bruta SSH (`hydra`) | ❌ 0,12 | ❌ (pocas conexiones) | **NO** |
+
+**El hallazgo incómodo y honesto: el modelo, sobre tráfico del laboratorio, solo
+detecta el escaneo.** Todo lo demás lo cubre el SOAR por tasa, salvo la fuerza
+bruta SSH, que **hoy no cubre nadie**.
+
+Esto **no invalida el proyecto**, pero cambia el guion de la defensa y hay que
+decirlo sin adornos:
+
+1. **El sistema completo detecta 3 de los 4 escenarios**, repartidos entre modelo
+   y SOAR. Ese reparto es exactamente la arquitectura que el proyecto defiende: el
+   modelo aporta la forma, el SOAR aporta el caudal.
+2. **El valor del modelo se concentra en lo que el conteo no puede ver:** el
+   escaneo lento (1 conexión cada 10 s) y, sobre CICIDS2017, las familias que sí
+   coinciden. Un IDS de solo-reglas no vería el escaneo lento.
+3. **El desfase de dominio es real y está cuantificado.** Dos de las cuatro
+   capturas refutaron predicciones que parecían razonables. Ese es el riesgo que
+   A1 marcó como principal, ahora con números — y es más honesto presentarlo que
+   esconderlo.
+4. **La fuerza bruta SSH es el hueco abierto.** Es recuperable (la forma coincide,
+   falla el ritmo), pero hoy no está resuelto.
+
+---
+
+## 14. Lo que sigue abierto
 
 Por orden de lo que bloquea la demo:
 
-1. **Capturar el ataque lento (`slowloris`)** — §7.2. Escenario 3 de la demo, sin
-   ninguna captura, y el que mejor justifica la existencia del modelo.
-2. **Capturar una inundación HTTP contestada** — §9. Convierte una inferencia en
-   una medición, en cualquiera de los dos sentidos.
-3. **Repetir la fuerza bruta SSH** — §7.1, revisando `MaxStartups` y
-   `MaxAuthTries` en la víctima.
-4. **Que la ventana parcial deje de abrir casos** — §8. Hoy solo se dispara sobre
-   tráfico benigno.
-5. **Implementar la regla de tasa por IP en el SOAR** — §6, con
-   `RATE_WINDOW_SECONDS = 10` y `RATE_FLOWS_THRESHOLD = 500`.
-6. **Regla de apertura de caso** — cuántos flujos de una IP abren un caso.
-7. **Fusionar `config.py`** conservando las dos mitades — §8.
-8. **Medir el desajuste de las ventanas temporales** antes de activarlas — §8.
+1. **Fuerza bruta SSH** — §12.3. El único escenario que hoy no cubre nadie. Es
+   recuperable (los tamaños coinciden, falla el ritmo): probar `hydra -t 16`.
+2. **Bajar `RATE_FLOWS_THRESHOLD` a 400** en el SOAR — §12.2, para que la regla
+   de tasa capture `slowloris` (486/10 s).
+3. **Implementar la regla de tasa por IP en el SOAR** — §6. Cubre inundación
+   SYN, inundación HTTP y ataque lento.
+4. **Que la ventana parcial deje de abrir casos** — §8. Hoy solo se dispara
+   sobre tráfico benigno.
+5. **Regla de apertura de caso** — cuántos flujos de una IP abren un caso.
+6. **Fusionar `config.py`** conservando las dos mitades — §8.
+7. **Medir el desajuste de las ventanas temporales** antes de activarlas — §8.
 
-Petición de capturas para Frank: `Documents/requerimientos_frank_v3.md`.
+**Lo que ya NO queda pendiente** (cerrado en la tercera pasada): capturar
+`slowloris`, capturar la inundación HTTP, y repetir la fuerza bruta SSH. Las tres
+se capturaron y midieron; el resultado está en §12.
+
+Petición de capturas para Frank: `Documents/requerimientos_frank_v3.md` (cumplida).
 
 ---
 
-## 11. Anexo — La primera pasada (v1.0), conservada como registro
+## 15. Anexo — La primera pasada (v1.0), conservada como registro
 
 > Se conserva porque documenta cómo se detectó el problema y por qué
 > hicieron falta capturas nuevas. Sus cifras son de las capturas v1.0,
