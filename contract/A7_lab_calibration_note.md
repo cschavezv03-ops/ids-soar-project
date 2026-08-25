@@ -15,8 +15,13 @@
 >   calibración: CICIDS2017 **no contiene ni un solo flujo** con la firma de
 >   nuestra inundación, así que el modelo extrapola en una región que nunca
 >   aprendió.
-> - **Fuerza bruta SSH:** marginal. Necesitaría un umbral ≤ 0,25, donde el 7,4 %
->   del tráfico benigno se marcaría como ataque. Inviable.
+> - **Fuerza bruta SSH:** marginal, y la captura no contiene los 250 intentos
+>   pedidos (§7.1). Hay que repetirla.
+> - **Ataque lento (`slowloris`):** **no existe ninguna captura.** Es el
+>   escenario 3 de la demo y el nombre engaña — `nmap_lento` es un *escaneo*
+>   lento, no un ataque lento (§7.2).
+> - **Reparto final:** el modelo cubre escaneo y ataque lento; el SOAR cubre la
+>   inundación con una regla de tasa por IP. Medido en §6.
 
 ---
 
@@ -206,20 +211,159 @@ decisión, de modo que informe y sistema no pueden divergir.
 
 ---
 
-## 6. Lo que sigue abierto
+## 6. El reparto del trabajo: qué detecta el modelo y qué el SOAR
 
-1. **La inundación** — decidir entre A y C (§3) con Frank. **Es lo único que
-   bloquea la demo.**
-2. **La captura de `hydra`** — 28 flujos son pocos; revisar el comando (§4).
-3. **Regla de apertura de caso** — cuántos flujos de una IP abren un caso. Con
-   1,56 % de falsos positivos sobre tráfico benigno real, es ahora **más**
-   importante que antes: es lo que evita que un flujo suelto bloquee a alguien.
-4. **Ventanas parciales** — el contrato dice que se evaluarán flujos incompletos
-   y el modelo solo ha visto flujos terminados. `pipeline.py` sigue vacío.
+La inundación deja de ser problema del modelo y pasa a ser del SOAR. Eso no es
+una renuncia: es que **el caudal solo existe al agregar por IP**, y el modelo ve
+un flujo aislado por diseño (la identidad está excluida del contrato por fuga de
+datos, A1 §6.3).
+
+Lo que el SOAR sí puede contar, medido sobre las capturas reales — **conexiones
+nuevas por IP de origen en ventanas de 10 segundos**:
+
+| Captura | Media / ventana | **Máximo / ventana** |
+|---|---|---|
+| `benigno_hora_punta` | 23,5 | **300** |
+| `benigno_tranquilo` | 5,5 | 18 |
+| `ataque_nmap_lento` | 1,0 | **1** |
+| `ataque_nmap_rapido` | 577,5 | 1.148 |
+| `ataque_syn_10pps` | 52,8 | **102** |
+| `ataque_syn_100pps` | 485,4 | 1.006 |
+| `ataque_syn_1000pps` | 4.433,1 | 9.473 |
+
+### La regla propuesta para el componente B
+
+> **Más de 500 conexiones nuevas desde una misma IP en 10 segundos → caso de
+> severidad ALTA, sin consultar al modelo.**
+
+El 500 sale de la medición: el máximo benigno observado es **300** en una
+ventana, y el ataque más flojo que la regla debe capturar produce **1.006**. El
+hueco entre ambos es suficiente para no afinar el número.
+
+### El reparto medido, y por qué los dos hacen falta
+
+| Ataque | Modelo (0,50) | Regla de tasa (>500/10 s) |
+|---|---|---|
+| `nmap` lento | **66,3 %** ✅ | 0 % ❌ (máximo 1 por ventana) |
+| `nmap` rápido | 56,4 % ✅ | ✅ (1.148) |
+| `syn` 1000 pps | 0 % ❌ | ✅ (9.473) |
+| `syn` 100 pps | 0 % ❌ | ✅ (1.006) |
+| `syn` 10 pps | 0 % ❌ | ❌ (102, dentro del ruido benigno) |
+
+**Son complementarios y ninguno sobra.** El escaneo lento es invisible para la
+regla de tasa —produce **1 conexión por ventana**— y el modelo lo detecta al
+66 %. La inundación es invisible para el modelo y la regla la ve sin esfuerzo.
+Ese es exactamente el argumento arquitectónico del proyecto, ahora con cifras:
+**el modelo aporta la forma del flujo, el SOAR aporta el caudal por IP.**
+
+### El hueco honesto
+
+`syn_10pps` **no lo detecta ninguno de los dos**: 102 conexiones por ventana
+queda por debajo del máximo benigno de 300. Conviene decirlo antes de que lo
+pregunten, junto con el matiz que lo relativiza: **10 paquetes por segundo no
+son una denegación de servicio**. Ese caudal no tumba nada; es ruido con forma
+de inundación. La captura se pidió para responder «¿es cuestión de
+intensidad?», y respondió que no.
+
+### Lo que hay que añadir a `config.py`
+
+Hoy no existe ningún parámetro de tasa. Habría que añadir algo como:
+
+```python
+# --- Correlación por IP (componente B) ---
+RATE_WINDOW_SECONDS   = 10    # ventana de conteo
+RATE_FLOWS_THRESHOLD  = 500   # conexiones nuevas por IP -> caso ALTO
+```
+
+Los valores salen de la tabla de arriba. **Son de Frank**, no míos: los mido y
+los propongo, los fija quien implementa la correlación.
 
 ---
 
-## 7. Anexo — La primera pasada (v1.0), conservada como registro
+## 7. Lo que falta capturar
+
+### 7.1 Fuerza bruta SSH — sí, hace falta repetirla
+
+La captura actual **no contiene los 250 intentos pedidos**. Sus 28 flujos se
+parten en dos grupos:
+
+| Grupo | Flujos | Paquetes | Duración | Probabilidad |
+|---|---|---|---|---|
+| Sesiones SSH completas | **12** | 39 | 14–21 s | 0,12–0,39 |
+| Conexiones rechazadas | **15** | 9 | **~1 ms** | 0,16–0,29 |
+| Otra | 1 | 22 | 0,09 s | 0,02 |
+
+Los 15 flujos de **1 milisegundo** son conexiones que el servidor aceptó y cortó
+en el acto: la víctima corre **OpenSSH 10.2** y sus límites `MaxStartups` y
+`MaxAuthTries` estrangulan el ataque. Las 12 sesiones buenas son **idénticas
+entre sí**, así que hydra repitió doce veces lo mismo. En total 625 paquetes,
+cuando 250 intentos SSH reales necesitarían varios miles.
+
+**Y aun así, ninguna llega a 0,50.** Las de 39 paquetes se quedan en 0,39. La
+`SSH-Patator` de CICIDS2017 son sesiones de 53 paquetes y **12 segundos con
+muchos intentos dentro de una misma conexión**; las nuestras son 39 paquetes con
+un intento. Es el mismo desajuste que la inundación, pero **mucho más leve y
+probablemente recuperable con una captura mejor** — de ahí que sí merezca la
+pena repetirla, mientras que en la inundación no.
+
+### 7.2 Ataque lento — no existe ninguna captura, y es escenario de la demo
+
+**Esto no estaba detectado hasta ahora y conviene dejarlo escrito con claridad,
+porque el nombre engaña.**
+
+`nmap_lento` y `portscan_lento` son **escaneos lentos**: pertenecen a la familia
+`PortScan` y el modelo los detecta al 66,3 %. **No son «ataques lentos».**
+
+En el vocabulario del proyecto (A1 §9) «ataque lento» es **`DoS slowloris`**:
+mantener muchas conexiones HTTP abiertas enviando lo mínimo para que no se
+cierren. Es un ataque distinto, de una familia distinta, **y no hay ninguna
+captura de él en el laboratorio.**
+
+Los cuatro escenarios de la demo, según A1 §9, y su estado real:
+
+| # | Escenario | Familia | Captura | Estado |
+|---|---|---|---|---|
+| 1 | Escaneo rápido y lento | `PortScan` | ✅ | **Resuelto** — 56–66 % |
+| 2 | Inundación | `DDoS` | ✅ | **Al SOAR** (§6) |
+| 3 | **Ataque lento** | `DoS slowloris` | ❌ **no existe** | **Sin capturar** |
+| 4 | Fuerza bruta SSH | `SSH-Patator` | ⚠️ parcial | Repetir (§7.1) |
+
+Que falte el escenario 3 importa más de lo que parece: **`slowloris` es la
+familia donde el modelo mejor rinde** (0,9926 de recall sobre CICIDS2017) y
+donde la regla de tasa del SOAR **no puede ayudar** — un slowloris abre pocas
+conexiones y las mantiene, así que su caudal por IP es bajo. Es el escenario que
+mejor demuestra por qué hace falta un modelo, y es el único que no se ha
+capturado.
+
+Además hay una razón para esperar que transfiera bien: CICIDS2017 generó su
+`slowloris` con **la misma herramienta** que usaríamos nosotros, a diferencia de
+la inundación, donde el dataset usó un flood HTTP contestado y nosotros un SYN
+al vacío.
+
+---
+
+## 8. Lo que sigue abierto
+
+Por orden de lo que bloquea la demo:
+
+1. **Capturar el ataque lento (`slowloris`)** — §7.2. Escenario 3 de la demo, sin
+   ninguna captura, y el que mejor justifica la existencia del modelo.
+2. **Repetir la fuerza bruta SSH** — §7.1, revisando `MaxStartups` y
+   `MaxAuthTries` en la víctima.
+3. **Implementar la regla de tasa por IP en el SOAR** — §6, con
+   `RATE_WINDOW_SECONDS = 10` y `RATE_FLOWS_THRESHOLD = 500`. Es lo que cubre la
+   inundación, que el modelo no puede cubrir.
+4. **Regla de apertura de caso** — cuántos flujos de una IP abren un caso. Con
+   1,56 % de falsos positivos sobre tráfico benigno real es ahora más importante
+   que antes: es lo que evita que un flujo suelto bloquee a alguien.
+5. **Ventanas parciales** — el contrato dice que se evaluarán flujos incompletos
+   y el modelo solo ha visto flujos terminados. `pipeline.py` sigue vacío.
+
+Petición de capturas para Frank: `Documents/requerimientos_frank_v3.md`.
+
+---
+
+## 9. Anexo — La primera pasada (v1.0), conservada como registro
 
 > Se conserva porque documenta cómo se detectó el problema y por qué
 > hicieron falta capturas nuevas. Sus cifras son de las capturas v1.0,
