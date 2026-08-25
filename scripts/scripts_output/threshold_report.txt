@@ -1,0 +1,155 @@
+A6 threshold report - fixing the operating point of the Random Forest
+contract version 1.0
+
+Nothing was retrained. The model is frozen; only the cut moves.
+Measured on the A4 test-set predictions, 398,033 flows.
+
+==============================================================================
+1. THE AGGREGATE CANNOT CHOOSE THE THRESHOLD
+==============================================================================
+Attack-class F1 across 0.40-0.95: min 0.9915, max 0.9927
+    -> it varies by 0.0012 over that whole range.
+
+So F1 carries no signal about where to cut, and the marginal curve has
+no elbow either. What DOES move is the mix of the two errors, and they
+do not cost the same thing. A6 is therefore a POLICY decision
+constrained by measurement, not a maximum to be found. Saying that
+plainly is more defensible than presenting a chosen number as optimal.
+
+       thr  precision   recall       F1      FP      FN       FPR
+      0.05     0.9717   0.9986   0.9850   1,931      90   0.00582
+      0.10     0.9783   0.9984   0.9882   1,468     108   0.00443
+      0.15     0.9809   0.9981   0.9894   1,290     129   0.00389
+      0.20     0.9830   0.9976   0.9903   1,145     157   0.00345
+      0.25     0.9842   0.9972   0.9906   1,064     185   0.00321
+      0.30     0.9852   0.9968   0.9909     994     214   0.00300
+      0.35     0.9862   0.9965   0.9913     926     231   0.00279
+      0.40     0.9870   0.9961   0.9915     869     258   0.00262
+      0.45     0.9879   0.9957   0.9918     808     282   0.00244
+      0.50     0.9887   0.9953   0.9920     757     314   0.00228
+      0.55     0.9893   0.9947   0.9920     712     353   0.00215
+      0.60     0.9897   0.9943   0.9920     686     378   0.00207
+      0.65     0.9901   0.9939   0.9920     657     403   0.00198
+      0.70     0.9906   0.9934   0.9920     626     439   0.00189  <- contain
+      0.75     0.9911   0.9928   0.9920     589     478   0.00178
+      0.80     0.9921   0.9921   0.9921     523     521   0.00158
+      0.85     0.9943   0.9911   0.9927     374     590   0.00113
+      0.90     0.9952   0.9901   0.9926     319     657   0.00096  <- HIGH
+      0.95     0.9962   0.9873   0.9917     250     845   0.00075
+      1.00     0.9987   0.9743   0.9863      82   1,707   0.00025
+
+==============================================================================
+2. THE OPERATING POINT
+==============================================================================
+Read from src/common/config.py, which is the single source of truth
+shared with component B. This run refuses to start if they disagree.
+
+    < 0.70          ignored, no case opened
+    [0.70, 0.90)    MEDIUM severity -> short containment, 300 s
+    >= 0.90         HIGH severity   -> full containment,  600 s
+
+TWO TIERS RATHER THAN ONE. The two errors do not cost the same. A false
+negative costs one missed flow, and the SOAR groups hundreds of flows
+per attack into one case, so an attack survives many misses. A false
+positive fires iptables at a real user, and that cost does not dilute.
+A single cut forces one answer to two different questions; two tiers
+let a borderline flow cost five minutes and a confident one ten.
+
+==============================================================================
+3. WHAT ACTUALLY LANDS IN EACH BAND
+==============================================================================
+    band                       total    attack    benign   purity
+    ignored   (< 0.70)       331,504       439   331,065   0.0013
+    MEDIUM  [0.70-0.90)          525       218       307   0.4152
+    HIGH       (>= 0.90)      66,004    65,685       319   0.9952
+
+FINDING - THE MEDIUM BAND IS MOSTLY NOISE, AND THIS MATTERS.
+    It holds 525 of 398,033 flows and its purity is 0.4152:
+    307 benign against 218 attack. Counted flow by flow it
+    short-blocks MORE legitimate flows than attacks it catches.
+
+    The model's output is strongly bimodal - almost every flow is
+    either clearly below 0.70 or clearly above 0.90 - so the middle is
+    a thin, noisy sliver rather than a genuine 'uncertain' population.
+
+    THE BAND IS ONLY DEFENSIBLE IF THE SOAR NEEDS MORE THAN ONE FLOW TO
+    OPEN A CASE. One benign flow at 0.75 must not block anyone. An
+    attacker contributes many flows, mostly in the HIGH band. That
+    case-opening rule is component B's and is still undecided; until it
+    is, the MEDIUM band should run in monitor mode, not enforce.
+
+    Composition of the MEDIUM band by family:
+        BENIGN                     307
+        DoS Hulk                    77
+        DoS Slowhttptest            50
+        PortScan                    34
+        DDoS                        31
+        DoS GoldenEye               10
+        SSH-Patator                  6
+        DoS slowloris                6
+        FTP-Patator                  4
+
+==============================================================================
+4. PER-FAMILY RECALL ACROSS THE CANDIDATE CUTS
+==============================================================================
+A5 showed that an aggregate can hide a whole family. Choosing a
+threshold on the aggregate alone would repeat exactly that mistake.
+
+    family              metric                       n     0.50     0.70     0.80     0.90     0.95     0.99
+    BENIGN              false positive rate    331,691   0.0023   0.0019   0.0016   0.0010   0.0008   0.0004
+    DoS Hulk            recall                  34,365   0.9942   0.9924   0.9916   0.9902   0.9882   0.9836
+    DDoS                recall                  25,599   0.9990   0.9987   0.9983   0.9975   0.9967   0.9952
+    DoS GoldenEye       recall                   2,055   0.9859   0.9781   0.9766   0.9732   0.9650   0.9328
+    FTP-Patator         recall                   1,186   0.9983   0.9949   0.9941   0.9916   0.9874   0.9798
+    DoS slowloris       recall                   1,077   0.9926   0.9926   0.9916   0.9870   0.9842   0.9777
+    DoS Slowhttptest    recall                   1,045   0.9952   0.9856   0.9646   0.9378   0.8967   0.8010
+    SSH-Patator         recall                     630   0.9667   0.9587   0.9508   0.9492   0.9381   0.9254
+    PortScan            recall                     385   0.9429   0.8779   0.8468   0.7896   0.7325   0.6597
+
+THIS IS WHY THE CUT IS NOT PUSHED HIGHER. Going to 0.99 would drop
+false positives to 140, but PortScan per-flow recall falls to 0.6597
+and DoS Slowhttptest to 0.8010 - the two smallest families, and one of
+them is a demo scenario. At 0.70 no family drops below 0.87.
+
+The counter-argument, for completeness: per-flow recall is not
+per-attack recall. A scan of 100 flows at 0.6597 recall is missed
+entirely with probability 0.34^100, which is not a number that
+happens. The reason to stay at 0.70 is therefore NOT that 0.99 would
+miss scans - it would not. It is that a lower cut costs little, keeps
+the severity bands meaningful, and leaves margin for the domain shift
+A7 has to measure. A threshold tuned to the last decimal on CICIDS2017
+would be false precision about a network we have not measured yet.
+
+==============================================================================
+5. THE NUMBER THIS THRESHOLD DOES NOT FIX: THE BASE RATE
+==============================================================================
+The test set is 16.67% attacks. A real network between attacks is
+nowhere near that, and precision depends on it. Same model, same cut,
+different arithmetic.
+
+       thr   recall       FPR   prev 16.67%    prev 5.00%    prev 1.00%    prev 0.10%
+      0.50   0.9953   0.00228        0.9887        0.9583        0.8150        0.3039
+      0.70   0.9934   0.00189        0.9906        0.9652        0.8417        0.3451
+      0.90   0.9901   0.00096        0.9952        0.9819        0.9123        0.5075
+      0.99   0.9810   0.00042        0.9979        0.9919        0.9591        0.6994
+
+At the chosen cut the model produces 189 false alarms per 100,000 benign flows,
+whatever the prevalence. When attacks are 0.1% of traffic those swamp
+the true positives and precision falls to 0.3451.
+
+NO THRESHOLD FIXES THIS - it is arithmetic, not a model defect. What
+fixes it is the SOAR requiring several flows from the same IP before
+opening a case, and A7 measuring the false positive rate on the lab's
+own benign traffic, which has never been measured.
+
+==============================================================================
+6. FIGURES
+==============================================================================
+    reports/figures/threshold_curve.png
+    reports/figures/threshold_per_family.png
+
+==============================================================================
+DONE
+==============================================================================
+Operating point fixed at 0.70 / 0.90, matching src/common/config.py.
+See contract/A6_threshold_note.md for the written decision.
