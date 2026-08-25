@@ -284,8 +284,18 @@ Cinco características de familias cuya conversión ya sabemos hacer:
 | `fwd_act_data_pkts` | paquetes de ida que llevan datos reales | «Este flujo no transporta nada»: recupera por otra vía parte de lo que daban las banderas. |
 
 Resultado medido: la detección de **DoS Slowhttptest sube de 0,869 a 0,938** y
-**slowloris de 0,986 a 0,993**. Son justamente los ataques lentos, es decir el
-escenario con el que vamos a argumentar que el ML le gana a la regla fija.
+**slowloris de 0,986 a 0,993**. Son justamente los ataques lentos.
+
+> **Corregido tras A4.** Esta sección terminaba diciendo que los ataques lentos son
+> «el escenario con el que vamos a argumentar que el ML le gana a la regla fija».
+> La primera mitad sigue siendo cierta; la segunda es falsa y está medida. Los
+> ataques lentos son precisamente **donde la regla fija se defiende mejor**
+> (`DoS Slowhttptest` 0,85 de recall, `slowloris` 0,58), porque en el espacio de un
+> solo flujo la regla acaba siendo «flujo lento = ataque». Donde se hunde es en
+> `DDoS` (0,16), `PortScan` (0,09) y las dos de fuerza bruta (0,00). El argumento
+> correcto no es la lentitud, sino que **cada familia se delata por una
+> característica distinta y un umbral solo puede mirar una**. Ver
+> `contract/A4_training_note.md` §3 y §4.
 
 ---
 
