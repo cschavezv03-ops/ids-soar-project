@@ -3,6 +3,7 @@ from scapy.all import sniff, IP, TCP, UDP
 from src.capture.flow_manager import FlowManager
 from src.common import config
 from src.system.pipeline import (InferencePipeline, dummy_predictor)
+from src.system.pipeline import SOAREngine
 
 
 class PacketCapture:
@@ -10,6 +11,23 @@ class PacketCapture:
     def __init__(self):
         self.flow_manager = FlowManager()
         self.inference_pipeline = InferencePipeline(predictor=dummy_predictor)
+        self.soar = SOAREngine()
+
+    def process_inference(self, flow):
+
+        result = self.inference_pipeline.process_flow(flow)
+
+        src_ip, probability = result
+
+        soar_result = self.soar.process_alert(
+            flow=flow,
+            probability=probability
+        )
+
+        print("Inference: ", result)
+        print("SOAR: ", soar_result)
+
+        return soar_result
 
     def process_manager(self, packet):
 
@@ -91,14 +109,8 @@ class PacketCapture:
             print("Packets:", completed_flow.packet_count)
             print("Bytes:", completed_flow.total_bytes)
 
-            result = self.inference_pipeline.process_flow(
-                completed_flow
-            )
+            self.process_inference(completed_flow)
 
-            print(
-                "Inference:",
-                result
-            )
 
             return
 
@@ -116,14 +128,8 @@ class PacketCapture:
             print("Packets:", flow.packet_count)
             print("Bytes:", flow.total_bytes)
 
-            result = self.inference_pipeline.process_flow(
-                completed_flow
-            )
+            self.process_inference(flow)
 
-            print(
-                "Inference:",
-                result
-            )
 
         # ACTIVE TIMEOUT
 
@@ -140,14 +146,9 @@ class PacketCapture:
             print("Packets:", flow.packet_count)
             print("Bytes:", flow.total_bytes)
 
-            result = self.inference_pipeline.process_flow(
-                completed_flow
-            )
+            self.process_inference(flow)
 
-            print(
-                "Inference:",
-                result
-            )
+  
 
         # Active flow
 
@@ -161,9 +162,7 @@ class PacketCapture:
 
         if flow.packet_count % config.WINDOW_SIZE == 0:
 
-            result = self.inference_pipeline.process_flow(
-                flow
-            )
+            self.process_inference(flow)
 
 
             features = flow.get_features()
@@ -174,10 +173,7 @@ class PacketCapture:
             print("Packets:", flow.packet_count)
             print("Bytes:", flow.total_bytes)
 
-            print(
-                "Inference:",
-                result
-            )
+
 
     def start(self):
 

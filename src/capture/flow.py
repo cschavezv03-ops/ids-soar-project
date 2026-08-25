@@ -344,34 +344,32 @@ class Flow:
 
         # in ms
         flow_duration = (
-            self.calculate_duration() * 1_000
+            self.calculate_duration()
         )
 
         # in ms
         flow_iat_mean = (
-            self.calculate_iat_mean() * 1_000
+            self.calculate_iat_mean() 
         )
 
         flow_iat_std = (
-            self.calculate_iat_std() * 1_000
+            self.calculate_iat_std() 
         )
 
         flow_iat_max = (
-            self.calculate_iat_max() * 1_000
+            self.calculate_iat_max() 
         )
 
         flow_iat_min = (
-            self.calculate_iat_min() * 1_000
+            self.calculate_iat_min() 
         )
 
         fwd_iat_mean = (
             self.calculate_iat_forward_mean()
-            * 1_000
         )
 
         bwd_iat_mean = (
             self.calculate_iat_backward_mean()
-            * 1_000
         )
 
         return [
