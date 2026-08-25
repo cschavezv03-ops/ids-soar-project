@@ -147,8 +147,12 @@ class FixedRuleBaseline(BaseEstimator, ClassifierMixin):
     labels EVERY flow an attack scores 0.2857: the rule as worded carries
     essentially no information on this data. The reason is visible in one
     line - median `flow_pkts_s` is 0.19 for attacks and 54.42 for benign
-    traffic. The dataset's attacks are the SLOW flows, because a DoS holds
-    connections open and a scan probe is one packet in a flow that then waits.
+    traffic: pooled over every family, the dataset's attacks are the SLOW
+    flows, because a DoS holds connections open and a flood is many sparse
+    flows whose volume only appears once you aggregate per source IP.
+    (That pooled median does NOT hold family by family - PortScan runs at
+    5,017 pkts/s, the fastest family in the dataset. See
+    contract/A5_evaluation_note.md section 6.)
 
     So `fit` sweeps BOTH directions and keeps whichever scores better ON THE
     TRAINING SET, and the report prints both numbers. This is not the baseline

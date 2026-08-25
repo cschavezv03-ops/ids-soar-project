@@ -114,8 +114,9 @@ ataques medidos por flujo:
 
 - Un **DoS lento** funciona manteniendo conexiones abiertas y mandando lo mínimo
   para no cerrarlas. Pocos paquetes repartidos en mucho tiempo: tasa baja.
-- Un **sondeo de escaneo de puertos** es un paquete, y el flujo que lo contiene
-  espera después. Tasa baja.
+- Una **inundación** es muchos flujos escasos: `DDoS` mide 2,55 pkts/s **por
+  flujo**, aunque su caudal agregado sea enorme. El caudal solo aparece al sumar
+  por IP de origen y unidad de tiempo, que es como lo mide el SOAR.
 - Una **descarga o una sesión web benigna** mueve muchos paquetes en poco tiempo.
   Tasa alta.
 
@@ -123,6 +124,15 @@ La intuición «ataque = mucho tráfico» es correcta **por IP de origen y por u
 tiempo**, que es como la mide el SOAR. Deja de serlo **por flujo**, que es lo único
 que este componente ve. La regla no estaba mal pensada: estaba pensada para el otro
 componente.
+
+> **Matiz añadido tras A5, y es importante para no contar mal esta historia.** La
+> mediana de 0,19 es de **todos los ataques agrupados**, y está dominada por
+> `DoS Hulk` (137.457 de 265.366 flujos, a 0,15 pkts/s). **No vale familia por
+> familia:** `PortScan` mide **5.017 pkts/s**, la familia más rápida del dataset y 92
+> veces la mediana benigna. Por eso la regla ajustada no falla en las cuatro familias
+> «por ser el dataset lento», sino porque su umbral (`<= 0,2037`) es tan bajo que solo
+> captura las tres variantes de DoS genuinamente lentas. Tabla completa en
+> `A5_evaluation_note.md` §6.
 
 ### 3.4 Qué se cambió, y por qué no es hacer trampa
 
