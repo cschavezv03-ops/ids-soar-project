@@ -7,9 +7,14 @@ GATEWAY_IP  = "192.168.56.1"
 WHITELIST   = {"192.168.56.1", "192.168.56.10"}   # never block these
 
 # --- Model / decision ---
-THRESHOLD   = 0.70    # min prob to treat as attack; Person A tunes after calibration
-SEV_MEDIUM  = 0.70    # severity band boundaries
-SEV_HIGH    = 0.90
+# Recalibrated in A7 against 12,029 real lab benign flows. The A6 values
+# (0.70 / 0.90) were fixed on CICIDS2017 alone and detected 0.6% of our own
+# port scan; 0.50 detects 57%. HIGH is 0.70 because no lab attack flow ever
+# reaches 0.90, so a band at 0.90 would be dead on our network.
+# Evidence: contract/A7_lab_calibration_note.md, scripts_output/recalibration_report.txt
+THRESHOLD   = 0.50    # min prob to treat as attack
+SEV_MEDIUM  = 0.50    # severity band boundaries
+SEV_HIGH    = 0.70
 
 # --- Flow assembly ---
 ACTIVE_TIMEOUT = 120  # seconds

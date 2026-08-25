@@ -31,7 +31,7 @@ def test_config_carries_the_a6_decision():
 
 
 def test_drifted_config_stops_the_run(monkeypatch):
-    monkeypatch.setattr(config, "THRESHOLD", 0.5)
+    monkeypatch.setattr(config, "THRESHOLD", th.CONTAIN_THRESHOLD + 0.15)
     with pytest.raises(SystemExit, match="disagrees with the A6 decision"):
         th.assert_config_matches_decision()
 
@@ -55,8 +55,12 @@ def _labelled(proba, y):
 def test_band_boundaries_are_inclusive_below_exclusive_above():
     """A flow at exactly 0.70 must be contained, and one at exactly 0.90 must
     escalate. Off-by-one here changes what gets blocked and for how long."""
+    # Derived from config, not hardcoded: A7 moved the operating point and a
+    # test that pins the old numbers tests history, not behaviour.
     proba, y, labels = _labelled(
-        [0.69, 0.70, 0.89, 0.90], [c.BENIGN, c.ATTACK, c.ATTACK, c.ATTACK]
+        [config.THRESHOLD - 0.01, config.THRESHOLD,
+         config.SEV_HIGH - 0.01, config.SEV_HIGH],
+        [c.BENIGN, c.ATTACK, c.ATTACK, c.ATTACK],
     )
     bands = th.band_composition(y, proba, labels).set_index("band")
     totals = bands["total"].to_dict()

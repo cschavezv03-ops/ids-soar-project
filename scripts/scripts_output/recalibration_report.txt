@@ -1,0 +1,145 @@
+A7 recalibration report - the threshold against real lab traffic
+contract version 1.0   model trained 2026-08-24 21:29:03
+
+The model is NOT retrained. Only the cut moves. Section 4 explains why
+retraining would not fix the one thing that is actually broken.
+
+==============================================================================
+1. THE SECOND CAPTURE SET
+==============================================================================
+Hardware offload is now off: the largest frame is 1514 bytes, the
+Ethernet maximum. The first set carried 7240-byte frames from NIC
+coalescing, which inflated the three features the forest leans on most.
+
+    capture                              flows  unique vectors    p50    p90    max
+    benigno_hora_punta.pcap             11,449          11,201   0.00   0.10   1.00
+    benigno_tranquilo.pcap                 580             579   0.00   0.04   0.67
+    ataque_nmap_lento.pcap                  92              30   0.56   0.65   0.72
+    ataque_nmap_rapido.pcap              1,148             100   0.54   0.60   0.72
+    ataque_syn_10pps.pcap                  955               1   0.12   0.12   0.12
+    ataque_syn_100pps.pcap               9,607               1   0.12   0.12   0.12
+    ataque_syn_1000pps.pcap             97,419               1   0.12   0.12   0.12
+    ataque_hydra_ssh_250.pcap               28              28   0.24   0.37   0.39
+
+    benign flows: 12,029   attack flows: 109,249
+
+The benign half is now measurable. A6 asked for it and the first pass
+had two flows; 12,029 puts the 95% interval on a 0.002 rate inside
++/-25%, which is enough to choose a cut with.
+
+==============================================================================
+2. WHERE TO CUT, MEASURED ON OUR OWN TRAFFIC
+==============================================================================
+        cut     scan    hydra    flood   benign FPR   FP (n)  scans per FP
+      0.050   100.0%    96.4%   100.0%       0.1271    1,529           0.8
+      0.075   100.0%    96.4%   100.0%       0.1119    1,346           0.9
+      0.100   100.0%    96.4%   100.0%       0.1028    1,236           1.0
+      0.125   100.0%    92.9%     0.0%       0.0885    1,064           1.2
+      0.150   100.0%    85.7%     0.0%       0.0850    1,023           1.2
+      0.175    73.7%    82.1%     0.0%       0.0821      987           0.9
+      0.200    72.3%    60.7%     0.0%       0.0783      942           1.0
+      0.225    71.1%    57.1%     0.0%       0.0745      896           1.0
+      0.250    69.4%    39.3%     0.0%       0.0742      892           1.0
+      0.275    67.2%    32.1%     0.0%       0.0718      864           1.0
+      0.300    65.7%    14.3%     0.0%       0.0715      860           0.9
+      0.325    65.5%    14.3%     0.0%       0.0660      794           1.0
+      0.350    60.9%    14.3%     0.0%       0.0592      712           1.1
+      0.375    59.1%    10.7%     0.0%       0.0566      681           1.1
+      0.400    59.1%     0.0%     0.0%       0.0563      677           1.1
+      0.425    59.1%     0.0%     0.0%       0.0346      416           1.8
+      0.450    57.1%     0.0%     0.0%       0.0231      278           2.5
+      0.475    57.1%     0.0%     0.0%       0.0163      196           3.6
+      0.500    57.1%     0.0%     0.0%       0.0160      193           3.7  <- chosen
+      0.525    53.9%     0.0%     0.0%       0.0152      183           3.7
+      0.550    42.0%     0.0%     0.0%       0.0147      177           2.9
+      0.575    15.4%     0.0%     0.0%       0.0145      174           1.1
+      0.600    10.8%     0.0%     0.0%       0.0076       91           1.5
+      0.625     9.8%     0.0%     0.0%       0.0069       83           1.5
+      0.650     4.3%     0.0%     0.0%       0.0064       77           0.7
+      0.675     0.6%     0.0%     0.0%       0.0057       68           0.1
+      0.700     0.6%     0.0%     0.0%       0.0049       59           0.1  <- A6
+      0.725     0.0%     0.0%     0.0%       0.0037       45           0.0
+      0.750     0.0%     0.0%     0.0%       0.0023       28           0.0
+      0.775     0.0%     0.0%     0.0%       0.0021       25           0.0
+      0.800     0.0%     0.0%     0.0%       0.0021       25           0.0
+      0.825     0.0%     0.0%     0.0%       0.0014       17           0.0
+      0.850     0.0%     0.0%     0.0%       0.0012       15           0.0
+      0.875     0.0%     0.0%     0.0%       0.0010       12           0.0
+      0.900     0.0%     0.0%     0.0%       0.0007        9           0.0
+      0.925     0.0%     0.0%     0.0%       0.0006        7           0.0
+      0.950     0.0%     0.0%     0.0%       0.0006        7           0.0
+      0.975     0.0%     0.0%     0.0%       0.0006        7           0.0
+      1.000     0.0%     0.0%     0.0%       0.0003        4           0.0
+
+==============================================================================
+3. THE DECISION
+==============================================================================
+    contain  0.70 -> 0.50
+    HIGH     0.90 -> 0.70
+
+WHAT IT BUYS, on lab traffic:
+    port scan detection   0.6% -> 57.1%
+    benign false positives 59 -> 193 of 12,029
+
+WHAT IT COSTS, on CICIDS2017 - and it costs almost nothing, because
+recall rises on every single family while precision drops by 0.0019:
+
+    family                 at 0.70   at 0.50    change
+    DoS Hulk                0.9924    0.9942   +0.0017
+    DDoS                    0.9987    0.9990   +0.0002
+    DoS GoldenEye           0.9781    0.9859   +0.0078
+    FTP-Patator             0.9949    0.9983   +0.0034
+    DoS slowloris           0.9926    0.9926   +0.0000
+    DoS Slowhttptest        0.9856    0.9952   +0.0096
+    SSH-Patator             0.9587    0.9667   +0.0079
+    PortScan                0.8779    0.9429   +0.0649
+    BENIGN (false pos)         626       757      +131
+
+HIGH moves from 0.90 to 0.70 because nothing in the lab reaches 0.90 -
+the highest probability any lab attack flow receives is 0.72. Left at 0.90 the
+severity band would be dead on our own network, and a graded response
+that never grades is not a design, it is decoration.
+
+==============================================================================
+4. WHAT NO THRESHOLD FIXES: THE SYN FLOOD
+==============================================================================
+The three flood captures - 10, 100 and 1000 packets per second -
+produce 107,981 flows and 1 distinct feature vector(s) between them,
+and every one of them scores 0.12. The intensity does not matter at all.
+
+That answers the question the three intensities were captured to
+answer: it is NOT a matter of speed.
+
+The reason is structural. Our flood and CICIDS2017's DDoS are not the
+same attack:
+
+    feature                  lab hping3 -S   CICIDS2017 DDoS
+    flow_duration                     0.00      1,882,981.00
+    tot_fwd_pkts                      1.00              4.00
+    tot_bwd_pkts                      0.00              4.00
+    totlen_bwd_pkts                   0.00         11,601.00
+    bwd_pkt_len_mean                  0.00          1,934.50
+    pkt_len_std                       0.00          1,903.96
+
+Ours is an UNANSWERED SYN flood: one packet out, nothing back, zero
+duration. Theirs is an ANSWERED HTTP flood: four packets each way and
+11,601 bytes of server response. They share a name and nothing else.
+
+And the decisive number: CICIDS2017 contains 0 flows with our
+flood's signature (1 forward packet, 0 backward). Not few - NONE.
+
+So the model is not misclassifying the flood. It is EXTRAPOLATING into
+a region of the feature space its training set never covered, and a
+threshold cannot repair a region that was never learned.
+
+==============================================================================
+5. FIGURE
+==============================================================================
+    reports/figures/recalibration_lab.png
+
+==============================================================================
+DONE
+==============================================================================
+config.py must read THRESHOLD=0.5, SEV_MEDIUM=0.5, SEV_HIGH=0.7.
+It currently reads 0.5, 0.5, 0.7.
+See contract/A7_lab_calibration_note.md for the written decision.

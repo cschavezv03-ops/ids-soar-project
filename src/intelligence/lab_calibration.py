@@ -44,7 +44,9 @@ from intelligence import train  # noqa: E402
 from intelligence.preprocess import LABEL_COL, PROCESSED_DIR, Report  # noqa: E402
 
 REPORT_PATH = os.path.join("scripts", "scripts_output", "lab_calibration_report.txt")
-PCAP_DIR = os.path.join("data", "pcap")
+# The first capture set. A7 moved it into its own directory when Frank
+# delivered the second one; the second set is handled by recalibrate.py.
+PCAP_DIR = os.path.join("data", "pcap", "pcap_v1.0")
 TRAIN_PARQUET = os.path.join(PROCESSED_DIR, "train.parquet")
 
 # Each lab capture and the CICIDS2017 family it is meant to reproduce.

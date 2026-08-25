@@ -1,21 +1,232 @@
-# Nota A7 (primera pasada) — El modelo contra el tráfico del laboratorio
+# Nota A7 — Recalibración contra el tráfico del laboratorio
 
-**Tarea:** A7, recalibrar con tráfico propio. **Esta nota cubre la mitad medible hoy.**
-**Contrato:** v1.0, sin cambios. **`config.py` sin tocar:** no se ha movido ningún umbral.
-**Evidencia:** `scripts/scripts_output/lab_calibration_report.txt`.
+**Tarea:** A7, recalibrar con tráfico propio.
+**Contrato:** v1.0, sin cambios. **El modelo no se reentrena.**
+**Decisión:** `config.py` pasa de **0,70 / 0,90** a **0,50 / 0,70**.
+**Evidencia:** `scripts/scripts_output/recalibration_report.txt` (segunda pasada),
+`scripts/scripts_output/lab_calibration_report.txt` (primera), y
+`reports/figures/recalibration_lab.png`.
 
-> **Resultado, sin rodeos: al punto de operación de A6 (0,70), el modelo no detecta
-> los ataques del laboratorio.** Escaneo lento 6,8 %, escaneo rápido 0,9 %, SYN flood
-> 0,0 %, fuerza bruta SSH 0,0 %. El F1 de 0,9920 sobre CICIDS2017 no se traslada.
+> **Resumen: el umbral se pudo ajustar y el escaneo se recupera. La inundación
+> no, y no es cuestión de umbral.**
 >
-> Esto es exactamente el **desfase de dominio** que A1 identificó como riesgo
-> principal del proyecto y que A5 §6.3 predijo con su dirección. No es una sorpresa:
-> es la razón por la que A7 existe. Pero es una condición de bloqueo para la demo y
-> hay que tratarla como tal.
+> - **Escaneo de puertos:** de **0,6 % a 57 %** de detección por flujo. Resuelto.
+> - **SYN flood:** **0 % a cualquier umbral usable.** No es desfase de dominio ni
+>   calibración: CICIDS2017 **no contiene ni un solo flujo** con la firma de
+>   nuestra inundación, así que el modelo extrapola en una región que nunca
+>   aprendió.
+> - **Fuerza bruta SSH:** marginal. Necesitaría un umbral ≤ 0,25, donde el 7,4 %
+>   del tráfico benigno se marcaría como ataque. Inviable.
 
 ---
 
-## 1. Lo que se midió
+## 0. Las dos pasadas
+
+| | Primera pasada | Segunda pasada |
+|---|---|---|
+| Capturas | `data/pcap/pcap_v1.0/` | `data/pcap/pcap_v2.0/` |
+| Flujos benignos | **2** | **12.029** |
+| Offload de la tarjeta | activo (tramas de 7.240 B) | **desactivado** (máx. 1514 B) |
+| Módulo | `lab_calibration.py` | `recalibrate.py` |
+| Resultado | diagnóstico, sin poder decidir | **decisión tomada** |
+
+La primera pasada encontró el problema y no pudo arreglarlo: con 2 flujos
+benignos el intervalo de confianza sobre la tasa de falsos positivos iba de
+0,02 % a 67 %. Frank entregó el segundo juego con el offload desactivado y
+12.029 flujos benignos, y con eso sí se puede elegir un corte.
+
+---
+
+## 1. El nuevo punto de operación
+
+| | Antes (A6) | **Ahora (A7)** |
+|---|---|---|
+| `THRESHOLD` / `SEV_MEDIUM` | 0,70 | **0,50** |
+| `SEV_HIGH` | 0,90 | **0,70** |
+
+### Qué gana, en el laboratorio
+
+| Captura | a 0,70 | **a 0,50** |
+|---|---|---|
+| `nmap` lento | 2,2 % | **66,3 %** |
+| `nmap` rápido | 0,4 % | **56,4 %** |
+| Falsos positivos benignos | 58 de 12.029 | **188 de 12.029** (1,56 %) |
+
+Por cada falso positivo se detectan **3,8 flujos de escaneo**. Y con la
+agrupación del SOAR, la probabilidad de perder un escaneo entero es
+prácticamente cero (10⁻⁴⁴ para el escaneo lento de 92 flujos).
+
+### Qué cuesta, en CICIDS2017 — casi nada
+
+El recall **sube en las nueve familias** y la precisión baja 0,0019:
+
+| Familia | a 0,70 | a 0,50 | |
+|---|---|---|---|
+| DoS Hulk | 0,9924 | 0,9942 | +0,0018 |
+| DDoS | 0,9987 | 0,9990 | +0,0003 |
+| DoS GoldenEye | 0,9781 | 0,9859 | +0,0078 |
+| FTP-Patator | 0,9949 | 0,9983 | +0,0034 |
+| DoS slowloris | 0,9926 | 0,9926 | 0,0000 |
+| DoS Slowhttptest | 0,9856 | 0,9952 | +0,0096 |
+| SSH-Patator | 0,9587 | 0,9667 | +0,0080 |
+| **PortScan** | 0,8779 | **0,9429** | **+0,0650** |
+| Falsos positivos | 626 | 757 | +131 |
+
+**El umbral de A6 estaba de más, incluso para CICIDS2017.** Se eligió con la
+lógica correcta —coste asimétrico— pero sobre una tasa base que no era la
+nuestra.
+
+### Por qué `SEV_HIGH` baja a 0,70
+
+**Ningún flujo de ataque del laboratorio supera 0,72.** Con la banda alta en
+0,90 nunca se activaría en nuestra red, y una respuesta graduada que nunca
+gradúa no es un diseño, es decoración.
+
+---
+
+## 2. La inundación: por qué ningún umbral la arregla
+
+Las tres capturas de `hping3` a 10, 100 y 1000 paquetes/s producen **107.981
+flujos y UN SOLO vector de características distinto**, y todos puntúan **0,12**.
+
+> **La intensidad no influye en absoluto.** Esa era exactamente la pregunta que
+> las tres capturas venían a responder, y está respondida: **no es cuestión de
+> velocidad.**
+
+La causa es estructural. Nuestra inundación y el «DDoS» de CICIDS2017 **no son
+el mismo ataque**:
+
+| Característica | `hping3 -S` (lab) | `DDoS` (CICIDS2017) |
+|---|---|---|
+| `flow_duration` | 0,00 | 1.882.981 |
+| `tot_fwd_pkts` | 1 | 4 |
+| `tot_bwd_pkts` | **0** | 4 |
+| `totlen_bwd_pkts` | 0 | 11.601 |
+| `bwd_pkt_len_mean` | 0 | 1.934,50 |
+| `pkt_len_std` | 0 | 1.903,96 |
+
+La nuestra es una **inundación SYN sin respuesta**: un paquete de ida, nada de
+vuelta, duración cero. La suya es una **inundación HTTP contestada**: cuatro
+paquetes en cada sentido y 11.601 bytes de respuesta del servidor. Comparten el
+nombre y nada más.
+
+**Y el dato decisivo: CICIDS2017 contiene CERO flujos con la firma de nuestra
+inundación** (1 paquete de ida, 0 de vuelta). No pocos: ninguno.
+
+> El modelo no está clasificando mal la inundación. Está **extrapolando en una
+> región del espacio de características que su entrenamiento nunca cubrió**, y
+> un umbral no puede reparar una región que nunca se aprendió.
+
+---
+
+## 3. Qué hacer con la inundación: las opciones, medidas
+
+### Opción A — Que la detecte el SOAR (recomendada)
+
+97.419 flujos en 103 segundos desde una sola IP son **946 flujos por segundo**.
+Contar conexiones por IP y por unidad de tiempo detecta eso de forma trivial y
+sin ningún modelo.
+
+Encaja con el reparto de trabajo del proyecto y con lo que ya sabíamos: **la
+intuición «muchas conexiones = ataque» es correcta por IP y por tiempo, que es
+como mide el SOAR, y deja de serlo por flujo, que es lo único que ve el
+modelo.** La inundación es precisamente el caso donde el SOAR es el instrumento
+adecuado y el modelo no.
+
+**Coste: bajo.** Es una regla de conteo en el componente B, que además ya
+necesita esa lógica para la regla de apertura de caso.
+
+### Opción B — Reentrenar incluyendo tráfico del laboratorio
+
+**Viable en volumen, pobre en información.** Tras deduplicar (política D3), las
+capturas de ataque aportan:
+
+| Captura | Flujos | **Vectores únicos** |
+|---|---|---|
+| `syn_1000pps` | 97.419 | **1** |
+| `syn_100pps` | 9.607 | **1** |
+| `syn_10pps` | 955 | **1** |
+| `nmap_rapido` | 1.148 | 100 |
+| `nmap_lento` | 92 | 30 |
+| `hydra_ssh_250` | 28 | 28 |
+| **Total ataque** | 109.249 | **161** |
+
+Frente a los 265.366 flujos de ataque de CICIDS2017. **Entrenar con esto le
+enseñaría al modelo un vector concreto**, no un concepto: memorización, no
+generalización. Si el atacante cambia de puerto o la trama de relleno cambia,
+falla.
+
+A favor: ningún flujo benigno del laboratorio coincide exactamente con el vector
+de la inundación (0 de 12.029), así que las clases **sí** son separables. En
+contra: rompería el modelo que A4 y A5 validaron y obligaría a repetir toda la
+validación, para cubrir un caso que la Opción A resuelve por diseño.
+
+### Opción C — Capturar una inundación que sí se parezca al dataset
+
+Una inundación **HTTP contestada** (`slowhttptest`, `goldeneye`, `ab` a alta
+tasa) contra un servidor que responda produciría flujos con payload de vuelta,
+que es lo que el modelo aprendió a reconocer.
+
+Es la opción correcta **si la demo tiene que enseñar al modelo detectando la
+inundación**. Pero cambia la herramienta del guion, y no arregla el caso
+`hping3`: solo lo evita.
+
+**Recomendación: A, y documentar el límite.** Es honesta, encaja con la
+arquitectura y no toca un modelo validado. C es complementaria si se quiere que
+la demo muestre al modelo actuando sobre una inundación.
+
+---
+
+## 4. Fuerza bruta SSH: sin resolver, y con poca evidencia
+
+28 flujos, mediana 0,24, máximo 0,39. Detectarla exigiría un umbral ≤ 0,25,
+donde el **7,4 % del tráfico benigno** se marcaría como ataque. Inviable.
+
+Con 28 flujos tampoco hay base para concluir gran cosa. La captura de `hydra`
+con 250 intentos produjo muchos menos flujos de los esperados: conviene revisar
+con Frank si `hydra -t 4` reutiliza conexiones. Es el cabo más suelto que queda.
+
+---
+
+## 5. Reproducción
+
+```bash
+python src/intelligence/recalibrate.py              # usa la caché de vectores
+python src/intelligence/recalibrate.py --re-extract # reextrae (~7 min)
+python src/intelligence/threshold.py                # A6, con el punto nuevo
+pytest -q                                           # 125 pruebas
+```
+
+La extracción de `benigno_hora_punta.pcap` (1,8 GB, 1,7 M paquetes) tarda unos
+7 minutos, así que los 24-vectores se cachean en
+`data/processed/lab_vectors_v2.parquet`.
+
+`threshold.py` **se niega a ejecutarse si `config.py` no coincide** con la
+decisión, de modo que informe y sistema no pueden divergir.
+
+---
+
+## 6. Lo que sigue abierto
+
+1. **La inundación** — decidir entre A y C (§3) con Frank. **Es lo único que
+   bloquea la demo.**
+2. **La captura de `hydra`** — 28 flujos son pocos; revisar el comando (§4).
+3. **Regla de apertura de caso** — cuántos flujos de una IP abren un caso. Con
+   1,56 % de falsos positivos sobre tráfico benigno real, es ahora **más**
+   importante que antes: es lo que evita que un flujo suelto bloquee a alguien.
+4. **Ventanas parciales** — el contrato dice que se evaluarán flujos incompletos
+   y el modelo solo ha visto flujos terminados. `pipeline.py` sigue vacío.
+
+---
+
+## 7. Anexo — La primera pasada (v1.0), conservada como registro
+
+> Se conserva porque documenta cómo se detectó el problema y por qué
+> hicieron falta capturas nuevas. Sus cifras son de las capturas v1.0,
+> tomadas **con el offload activo**, y están superadas por las de arriba.
+
+
+### 7.1. Lo que se midió
 
 Las 6 capturas del laboratorio pasadas por el extractor de A2 y el Random Forest de
 A4, con el punto de operación de A6 leído de `config.py`.
@@ -31,7 +242,7 @@ A4, con el punto de operación de A6 leído de `config.py`.
 
 ---
 
-## 2. El diagnóstico que importa: no es un solo problema, son dos
+### 7.2. El diagnóstico que importa: no es un solo problema, son dos
 
 Agrupar todo esto como «la detección es baja» sería un error de análisis. Hay dos
 fallos distintos, con causas distintas y dueños distintos.
@@ -90,7 +301,7 @@ el más cercano a CICIDS2017 de todas las capturas (ratios 1,07–1,55).
 
 ---
 
-## 3. Un defecto de captura que hay que corregir antes de seguir
+### 7.3. Un defecto de captura que hay que corregir antes de seguir
 
 Las dos capturas benignas contienen **paquetes de 1.580 y 7.240 bytes**. Un paquete de
 7.240 B no viajó así por la red: es la tarjeta de red **fusionando segmentos** antes de
@@ -113,7 +324,7 @@ lugar de bajar más.
 
 ---
 
-## 4. La otra mitad de A7 sigue bloqueada
+### 7.4. La otra mitad de A7 sigue bloqueada
 
 A6 §5 dejó como entregable medir la tasa de falsos positivos sobre tráfico benigno del
 laboratorio. **Hoy hay 2 flujos benignos en total.**
@@ -135,7 +346,7 @@ lo que exige tráfico sostenido y variado de varios equipos.
 
 ---
 
-## 5. Alcance de A7: recalibrar es mover el umbral, no reentrenar
+### 7.5. Alcance de A7: recalibrar es mover el umbral, no reentrenar
 
 `A1_analysis_and_decisions.md` §9 redactó A7 como «el modelo **aprende** el patrón real
 de nuestro laboratorio», lo que se lee como reentrenar. **Queda zanjado aquí: A7 mueve
@@ -150,7 +361,7 @@ el umbral, no reentrena.**
 
 ---
 
-## 6. Reproducción
+### 7.6. Reproducción
 
 ```bash
 python src/intelligence/lab_calibration.py   # ~2 min, ningun reentrenamiento
@@ -163,7 +374,7 @@ que es la extracción que A2 validó — una segunda copia acabaría divergiendo
 
 ---
 
-## 7. Qué queda, en orden
+### 7.7. Qué queda, en orden
 
 1. **Capturas nuevas de Frank, con el offload desactivado.** Es el bloqueo real. Sin
    miles de flujos benignos no se puede fijar ningún umbral con fundamento, y sin una

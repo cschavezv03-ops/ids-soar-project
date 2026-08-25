@@ -55,8 +55,11 @@ REPORT_PATH = os.path.join("scripts", "scripts_output", "threshold_report.txt")
 # What A6 measured and decided. config.py must agree with these or the run
 # stops: a report describing 0.70 while the system containment-blocks at 0.50
 # would be worse than no report at all.
-CONTAIN_THRESHOLD = 0.70
-HIGH_THRESHOLD = 0.90
+# Recalibrated in A7 against real lab traffic; A6 set these to 0.70 / 0.90 on
+# CICIDS2017 alone. The A6 analysis below still reproduces on the CICIDS2017
+# test set - what changed is which point on that curve the system operates at.
+CONTAIN_THRESHOLD = 0.50
+HIGH_THRESHOLD = 0.70
 
 # Prevalences to project precision onto. The test set is 16.67% attacks; a real
 # network between attacks is nowhere near that, and precision depends on it.
