@@ -342,28 +342,150 @@ al vacío.
 
 ---
 
-## 8. Lo que sigue abierto
+## 8. Ventanas parciales — revisadas sobre el código real
+
+`src/system/pipeline.py` **ya no está vacío**: está en la rama `soar-response`, y
+las ventanas parciales **ya están implementadas**. En `src/system/capture.py`:
+
+```python
+# PARTIAL WINDOW
+if flow.packet_count % config.WINDOW_SIZE == 0:
+    self.process_inference(flow)
+```
+
+Con `WINDOW_SIZE = 100`, cada 100 paquetes se puntúa el flujo **incompleto**. Es
+uno de los cuatro puntos donde se llama al modelo, junto con el cierre por
+FIN/RST, el timeout activo y el timeout de inactividad.
+
+### El hallazgo: con 100 paquetes, la ventana solo se dispara sobre tráfico benigno
+
+Paquetes por flujo, medido:
+
+| Familia | p50 | p95 | **% con ≥ 100 paquetes** |
+|---|---|---|---|
+| BENIGN | 4 | 47 | **1,73 %** |
+| SSH-Patator | 53 | 55 | 0,00 % |
+| FTP-Patator | 24 | 24 | 0,00 % |
+| DoS Hulk | 13 | 16 | 0,00 % |
+| DoS GoldenEye | 11 | 16 | 0,00 % |
+| DDoS | 8 | 14 | 0,00 % |
+| DoS Slowhttptest | 7 | 10 | 0,00 % |
+| DoS slowloris | 4 | 19 | 0,00 % |
+| PortScan | 4 | 8 | 0,06 % |
+
+> **Ninguna familia de ataque alcanza los 100 paquetes.** El 0,00 % de los flujos
+> de ataque de CICIDS2017 los supera, y el 0,00 % de los del laboratorio (máximo
+> observado: **39**).
+
+En el tráfico benigno del laboratorio, en cambio, **el 9,16 % de los flujos pasa
+de 100 paquetes** y generarían **12.962 evaluaciones parciales** — más que los
+12.029 flujos completos. La ventana parcial **duplica las llamadas al modelo, y
+todas las añadidas son sobre tráfico legítimo.**
+
+**Tal como está configurada hoy, la ventana parcial es superficie de falsos
+positivos con cero beneficio de detección.**
+
+### El problema de fondo: el disparador cuenta lo que no debe
+
+La ventana parcial existe por una razón legítima: **detectar antes de que el
+flujo termine**. Un `slowloris` mantiene una conexión abierta ~100 segundos, y
+con `ACTIVE_TIMEOUT = 120` esperar al cierre significa detectarlo dos minutos
+tarde.
+
+Pero el disparador cuenta **paquetes**, y los ataques que necesitan detección
+temprana son **lentos por definición**: no acumulan paquetes. `slowloris` manda 4
+paquetes de mediana. **Un contador de paquetes no se dispara nunca en el caso
+para el que se diseñó.**
+
+### Qué hacer, en dos pasos
+
+1. **Ahora: que la ventana parcial no abra casos.** O se desactiva, o su
+   resultado va a `monitor` y no a `enforce`. La evidencia es inequívoca: el
+   0,00 % de los ataques llega a dispararla.
+2. **Después de capturar `slowloris` (§7.2): decidir un disparador por TIEMPO**,
+   no por paquetes — puntuar los flujos abiertos cada N segundos. Esa es la forma
+   correcta de detectar temprano un ataque lento.
+
+**Pero eso arrastra un desajuste que sigue sin medir:** el modelo solo ha visto
+flujos **terminados**. Un flujo puntuado a los 30 segundos tiene otra duración,
+otros estadísticos IAT y otras tasas que el mismo flujo al cerrarse. Se puede
+medir troceando un pcap por tiempo y comparando, **y hay que hacerlo antes de
+activar ninguna ventana temporal.** Con la captura de `slowloris` se puede medir
+lo uno y lo otro a la vez.
+
+### Aviso: `config.py` ha divergido entre ramas
+
+| Campo | `ia-model` | `soar-response` |
+|---|---|---|
+| `THRESHOLD` / `SEV_MEDIUM` | **0,50** | 0,70 |
+| `SEV_HIGH` | **0,70** | 0,90 |
+| `WINDOW_SIZE` | — | 100 |
+| `CAPTURE_INTERFACE`, `BPF_FILTER` | — | presentes |
+
+Al fusionar hay que conservar **las dos mitades**: el umbral recalibrado de A7 y
+los campos de captura del componente B. Si la fusión se resuelve tomando un lado
+entero, o el sistema corre con el umbral viejo o pierde la configuración de
+captura.
+
+---
+
+## 9. Falta una captura más: inundación HTTP contestada
+
+En §2 quedó demostrado que el modelo no ve nuestra inundación SYN porque
+CICIDS2017 no contiene ningún flujo con esa forma. De ahí salió una afirmación
+que **es una inferencia, no una medición**:
+
+> «Si la demo lanzara una inundación HTTP contestada, el modelo probablemente sí
+> la vería, porque el `DDoS` de CICIDS2017 —que es exactamente eso— se detecta al
+> 0,9990.»
+
+**Eso hay que comprobarlo, y es barato.** Es la diferencia entre dos frases muy
+distintas en la defensa:
+
+- «El modelo no detecta inundaciones.» — concede mucho más de lo que la evidencia
+  sostiene.
+- «El modelo detecta inundaciones HTTP; no detecta una inundación SYN sin
+  respuesta, porque el dataset no contiene ninguna.» — es lo que creemos, y hoy
+  no está probado.
+
+Una captura de inundación HTTP contra un servidor que responda cierra la
+pregunta en un sentido o en otro:
+
+- **Si se detecta:** valida el 0,9990 sobre tráfico propio, y la demo gana una
+  inundación que **el modelo y el SOAR detectan a la vez**, cada uno por su
+  camino. Es el escenario más sólido posible.
+- **Si no se detecta:** es un resultado negativo importante — significaría que el
+  desfase de dominio es más profundo que un desajuste de tipo de ataque, y habría
+  que decirlo.
+
+Cualquiera de los dos resultados es publicable. Que la predicción sea falsable es
+justamente lo que la hace útil.
+
+---
+
+## 10. Lo que sigue abierto
 
 Por orden de lo que bloquea la demo:
 
 1. **Capturar el ataque lento (`slowloris`)** — §7.2. Escenario 3 de la demo, sin
    ninguna captura, y el que mejor justifica la existencia del modelo.
-2. **Repetir la fuerza bruta SSH** — §7.1, revisando `MaxStartups` y
+2. **Capturar una inundación HTTP contestada** — §9. Convierte una inferencia en
+   una medición, en cualquiera de los dos sentidos.
+3. **Repetir la fuerza bruta SSH** — §7.1, revisando `MaxStartups` y
    `MaxAuthTries` en la víctima.
-3. **Implementar la regla de tasa por IP en el SOAR** — §6, con
-   `RATE_WINDOW_SECONDS = 10` y `RATE_FLOWS_THRESHOLD = 500`. Es lo que cubre la
-   inundación, que el modelo no puede cubrir.
-4. **Regla de apertura de caso** — cuántos flujos de una IP abren un caso. Con
-   1,56 % de falsos positivos sobre tráfico benigno real es ahora más importante
-   que antes: es lo que evita que un flujo suelto bloquee a alguien.
-5. **Ventanas parciales** — el contrato dice que se evaluarán flujos incompletos
-   y el modelo solo ha visto flujos terminados. `pipeline.py` sigue vacío.
+4. **Que la ventana parcial deje de abrir casos** — §8. Hoy solo se dispara sobre
+   tráfico benigno.
+5. **Implementar la regla de tasa por IP en el SOAR** — §6, con
+   `RATE_WINDOW_SECONDS = 10` y `RATE_FLOWS_THRESHOLD = 500`.
+6. **Regla de apertura de caso** — cuántos flujos de una IP abren un caso.
+7. **Fusionar `config.py`** conservando las dos mitades — §8.
+8. **Medir el desajuste de las ventanas temporales** antes de activarlas — §8.
 
 Petición de capturas para Frank: `Documents/requerimientos_frank_v3.md`.
 
 ---
 
-## 9. Anexo — La primera pasada (v1.0), conservada como registro
+## 11. Anexo — La primera pasada (v1.0), conservada como registro
 
 > Se conserva porque documenta cómo se detectó el problema y por qué
 > hicieron falta capturas nuevas. Sus cifras son de las capturas v1.0,
