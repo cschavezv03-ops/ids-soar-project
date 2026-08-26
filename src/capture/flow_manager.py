@@ -1,4 +1,5 @@
 from src.capture.flow import Flow
+from src.common import config
 
 
 class FlowManager:
@@ -144,7 +145,7 @@ class FlowManager:
             # Para timeout de INACTIVIDAD necesitamos el ultimo paquete que se ha recibido
             last_packet_time = flow.timestamps[-1]
 
-            if current_time - last_packet_time >= 15:
+            if current_time - last_packet_time >= config.IDLE_TIMEOUT:
 
                 expired_flows.append(flow)
 
@@ -167,7 +168,7 @@ class FlowManager:
 
             flow_duration = current_time - first_packet_time
 
-            if flow_duration >= 120:
+            if flow_duration >= config.ACTIVE_TIMEOUT:
 
                 expired_flows.append(flow)
 

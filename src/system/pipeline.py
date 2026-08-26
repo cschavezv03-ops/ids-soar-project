@@ -1,6 +1,7 @@
 from src.intelligence.extractor import extract_features
 from src.intelligence.flow_adapter import FlowAdapter
 
+
 class InferencePipeline:
 
     def __init__(self, predictor):

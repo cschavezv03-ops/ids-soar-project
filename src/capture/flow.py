@@ -288,11 +288,13 @@ class Flow:
         if payload_size is None:
             payload_size = packet_size
 
+        length = payload_size
+
         self.packet_count += 1
-        self.total_bytes += packet_size
+        self.total_bytes += length
 
         self.timestamps.append(timestamp)
-        self.packet_sizes.append(packet_size)
+        self.packet_sizes.append(length)
 
         if self.is_forward(
             src_ip,
@@ -302,10 +304,10 @@ class Flow:
         ):
 
             self.forward_packets += 1
-            self.forward_bytes += packet_size
+            self.forward_bytes += length
 
             self.timestamps_forward.append(timestamp)
-            self.packet_sizes_forward.append(packet_size)
+            self.packet_sizes_forward.append(length)
 
             if payload_size > 0:
                 self.fwd_act_data_pkts += 1
@@ -313,10 +315,10 @@ class Flow:
         else:
 
             self.backward_packets += 1
-            self.backward_bytes += packet_size
+            self.backward_bytes += length
 
             self.timestamps_backward.append(timestamp)
-            self.packet_sizes_backward.append(packet_size)
+            self.packet_sizes_backward.append(length)
 
         #tcp flags only for logic
 
@@ -336,81 +338,3 @@ class Flow:
             self.psh_count += 1
 
         
-
-
-
-
-    def get_features(self):
-
-        # in ms
-        flow_duration = (
-            self.calculate_duration()
-        )
-
-        # in ms
-        flow_iat_mean = (
-            self.calculate_iat_mean() 
-        )
-
-        flow_iat_std = (
-            self.calculate_iat_std() 
-        )
-
-        flow_iat_max = (
-            self.calculate_iat_max() 
-        )
-
-        flow_iat_min = (
-            self.calculate_iat_min() 
-        )
-
-        fwd_iat_mean = (
-            self.calculate_iat_forward_mean()
-        )
-
-        bwd_iat_mean = (
-            self.calculate_iat_backward_mean()
-        )
-
-        return [
-
-            # 0
-            flow_duration,
-
-            # 1-4
-            self.forward_packets,
-            self.backward_packets,
-            self.forward_bytes,
-            self.backward_bytes,
-
-            # 5-8
-            self.calculate_forward_packet_size_min(),
-            self.calculate_forward_packet_size_mean(),
-            self.calculate_forward_packet_size_std(),
-            self.calculate_forward_packet_size_max(),
-
-            # 9-12
-            self.calculate_backward_packet_size_min(),
-            self.calculate_backward_packet_size_mean(),
-            self.calculate_backward_packet_size_std(),
-            self.calculate_backward_packet_size_max(),
-
-            # 13-14
-            self.calculate_packet_size_mean(),
-            self.calculate_packet_size_std(),
-
-            # 15-20
-            flow_iat_mean,
-            flow_iat_std,
-            flow_iat_max,
-            flow_iat_min,
-            fwd_iat_mean,
-            bwd_iat_mean,
-
-            # 21-22
-            self.calculate_packets_per_second(),
-            self.calculate_bytes_per_second(),
-
-            # 23
-            self.fwd_act_data_pkts,
-        ]

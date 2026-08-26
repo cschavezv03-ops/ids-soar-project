@@ -3,8 +3,10 @@ from scapy.all import sniff, IP, TCP, UDP
 from src.capture.flow import Flow
 from src.capture.flow_manager import FlowManager
 from src.common import config
-from src.system.pipeline import InferencePipeline, dummy_predictor
+from src.system.pipeline import InferencePipeline
 from src.system.soar import SOAREngine
+from src.intelligence.model import predict
+
 
 
 class PacketCapture:
@@ -14,7 +16,7 @@ class PacketCapture:
         self.flow_manager = FlowManager()
 
         self.inference_pipeline = InferencePipeline(
-            predictor=dummy_predictor
+            predictor=predict
         )
 
         self.soar = SOAREngine()
@@ -114,10 +116,6 @@ class PacketCapture:
 
         packet_size = len(packet)
 
-        # Ethernet minimum frame size / padding handling
-        if src_ip == config.VICTIM_IP and packet_size < 60:
-            packet_size = 60
-
         timestamp = float(packet.time)
 
         print(
@@ -130,124 +128,97 @@ class PacketCapture:
 
         # TIMEOUTS
 
-
-
-        # ACTIVE TIMEOUT
-
-        active_flows = self.flow_manager.check_active_timeouts(
-            timestamp
-        )
-
-        for flow in active_flows:
-
+        for flow in self.flow_manager.check_active_timeouts(timestamp):
             print("========== FLOW ACTIVE TIMEOUT ==========")
             print("Key:", flow.key())
-            print("Packets:", flow.packet_count)
-            print("Bytes:", flow.total_bytes)
-
             self.process_pending_window(flow)
 
-
-        # IDLE TIMEOUT
-
-
-        idle_flows = self.flow_manager.check_timeouts(
-            timestamp
-        )
-
-        for flow in idle_flows:
-
+        for flow in self.flow_manager.check_timeouts(timestamp):
             print("========== FLOW IDLE TIMEOUT ==========")
             print("Key:", flow.key())
-            print("Packets:", flow.packet_count)
-            print("Bytes:", flow.total_bytes)
-
             self.process_pending_window(flow)
 
         # UPDATE FLOW MANAGER
 
-
         completed_flow = self.flow_manager.process_packet(
-
             src_ip=src_ip,
             src_port=src_port,
-
             dst_ip=dst_ip,
             dst_port=dst_port,
-
             protocol=protocol,
-
             packet_size=packet_size,
             timestamp=timestamp,
-
             tcp_flags=tcp_flags,
-            payload_size=payload_size
+            payload_size=payload_size,
         )
 
+        # FLOW CLOSED BY FIN / RST
+ 
 
-        # GET ACTIVE FLOW
+        if completed_flow is not None:
+
+            window = self.get_inference_window(completed_flow)
+
+            window.add_packet(
+                src_ip=src_ip,
+                src_port=src_port,
+                dst_ip=dst_ip,
+                dst_port=dst_port,
+                packet_size=packet_size,
+                timestamp=timestamp,
+                tcp_flags=tcp_flags,
+                payload_size=payload_size,
+            )
+
+            print("========== FLOW COMPLETED ==========")
+            print("Key:", completed_flow.key())
+            print("Packets:", completed_flow.packet_count)
+
+            self.process_pending_window(completed_flow)
+
+            return
+
+        # FLOW STILL OPEN
 
         flow = self.flow_manager.get_or_create_flow(
-
             src_ip,
             src_port,
-
             dst_ip,
             dst_port,
-
-            protocol
+            protocol,
         )
-
-        # INFERENCE WINDOW
 
         window = self.get_inference_window(flow)
 
         window.add_packet(
-
             src_ip=src_ip,
             src_port=src_port,
-
             dst_ip=dst_ip,
             dst_port=dst_port,
-
             packet_size=packet_size,
             timestamp=timestamp,
-
             tcp_flags=tcp_flags,
-            payload_size=payload_size
+            payload_size=payload_size,
         )
-
-
-        # COMPLETE INFERENCE WINDOW
-  
 
         if window.packet_count >= config.WINDOW_SIZE:
 
             print("========== INFERENCE WINDOW ==========")
             print("Flow:", flow.key())
             print("Window packets:", window.packet_count)
-            print("Window bytes:", window.total_bytes)
 
             self.process_inference(window)
 
-
             del self.inference_windows[flow.key()]
 
- 
-        # FLOW COMPLETED BY FIN / RST
+    def flush(self):
 
+        for key in list(self.inference_windows):
 
-        if completed_flow is not None:
+            window = self.inference_windows.pop(key)
 
-            print("========== FLOW COMPLETED ==========")
-            print("Key:", completed_flow.key())
-            print("Packets:", completed_flow.packet_count)
-            print("Bytes:", completed_flow.total_bytes)
-
-  
-            self.process_pending_window(completed_flow)
-
-            return
+            if window.packet_count > 0:
+                self.process_inference(window)
 
     def start(self):
 
