@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 import sqlite3
 
 from src.common import config
+from src.system import containment as containment_backend
 
 
 @dataclass
@@ -22,14 +23,24 @@ class Case:
     updated_at: str
     alert_count: int = 1
     alerts: list[Alert] = field(default_factory=list)
+    blocked_at_severity: str | None = None
 
 class SOAREngine:
 
-    def __init__(self):
+    def __init__(self, containment=containment_backend):
+        self.containment = containment
         self.cases = {}
         self.next_case_id = 1
+        self.latencies = []
         self.init_db()
         self.load_cases()
+
+        if config.MODE == "enforce":
+            try:
+                self.containment.setup()
+            except Exception as exc:
+                print("[soar] containment setup failed:", exc)
+
 
     def init_db(self):
         connection = sqlite3.connect(config.CASES_DB)
@@ -149,7 +160,8 @@ class SOAREngine:
                 created_at=row[5],
                 updated_at=row[6],
                 alert_count=row[7],
-                alerts=[]
+                alerts=[],
+                blocked_at_severity=row[2] if row[3] == "BLOCK" else None,
             )
 
             cursor.execute("""
@@ -173,10 +185,13 @@ class SOAREngine:
 
                 case.alerts.append(alert)
 
-            self.cases[case.src_ip] = case
+            if (row[3] != "CLOSED"
+                    and self._age_seconds(case.updated_at) <= config.CASE_TTL_SECONDS):
+                self.cases[case.src_ip] = case
 
         if rows:
             self.next_case_id = max(row[0] for row in rows) + 1
+
 
         connection.close()
 
@@ -201,6 +216,14 @@ class SOAREngine:
     def correlate(self, alert):
 
         case = self.cases.get(alert.src_ip)
+
+        if case is not None and self._age_seconds(case.updated_at) > config.CASE_TTL_SECONDS:
+            case = None
+            
+        if case is not None and self._is_closed(case.case_id):
+            self.cases.pop(alert.src_ip, None)
+            case = None
+        
 
         if case is None:
 
@@ -232,6 +255,20 @@ class SOAREngine:
 
         return case
 
+
+
+    def close_case(self, src_ip):
+        
+        case = self.cases.pop(src_ip, None)
+
+        if case is None:
+            return False
+
+        case.action = "CLOSED"
+        self.save_case(case)
+        return True
+
+
     def triage(self, case):
 
         probability = case.probability
@@ -239,17 +276,19 @@ class SOAREngine:
         if probability >= config.SEV_HIGH:
             severity = "HIGH"
 
-        elif probability >= config.SEV_MEDIUM:
-            severity = "MEDIUM" 
+        elif case.alert_count >= config.ESCALATE_TO_HIGH:
+            # Sustained burst: many flows from one source, correlated.
+            severity = "HIGH"
 
-        elif probability == config.THRESHOLD:
-            severity = "LOW"
+        elif case.alert_count >= config.ESCALATE_TO_MEDIUM:
+            # Repeated, but not yet a burst.
+            severity = "MEDIUM"
 
         else:
+            # First sightings at moderate confidence. Log and watch.
             severity = "LOW"
 
         case.severity = severity
-
         return case
 
     def decide(self,  case):
@@ -287,6 +326,83 @@ class SOAREngine:
             "action": effective_action, 
             "ttl": ttl}
 
+    def apply(self, case, decision):
+
+        if decision["action"] != "BLOCK":
+            return
+
+        escalated = case.severity != case.blocked_at_severity
+
+        try:
+            if not escalated and self.containment.is_blocked(case.src_ip):
+                return
+
+            blocked = self.containment.block(case.src_ip, decision["ttl"])
+
+        except Exception as exc:
+            print("[soar] containment failed for", case.src_ip, ":", exc)
+            case.action = "BLOCK_FAILED"
+            return
+
+        if blocked:
+            case.blocked_at_severity = case.severity
+            self.record_latency(case)
+
+        else:
+            case.action = "BLOCK_REFUSED"
+
+
+    def record_latency(self, case):
+
+        seconds = self._age_seconds(case.created_at)
+
+        if seconds == float("inf"):
+            return
+
+        self.latencies.append(seconds)
+
+        with open(config.LATENCY_LOG, "a") as handle:
+            handle.write(
+                f"{case.case_id},{case.src_ip},{case.severity},"
+                f"{case.alert_count},{seconds:.4f}\n"
+            )
+
+    def latency_report(self):
+        """p50 and p95 of containment latency, as section 11.2 requires."""
+        if not self.latencies:
+            return None
+
+        ordered = sorted(self.latencies)
+
+        def percentile(p):
+            index = min(int(len(ordered) * p), len(ordered) - 1)
+            return ordered[index]
+
+        return {
+            "n": len(ordered),
+            "p50": percentile(0.50),
+            "p95": percentile(0.95),
+            "max": ordered[-1],
+        }
+    
+    def _age_seconds(self, iso_timestamp):
+
+        try:
+            then = datetime.fromisoformat(iso_timestamp)
+        except (TypeError, ValueError):
+            return float("inf")
+        return (datetime.now(timezone.utc) - then).total_seconds()
+
+    def _is_closed(self, case_id):
+
+        connection = sqlite3.connect(config.CASES_DB)
+        row = connection.execute(
+            "SELECT action FROM cases WHERE case_id = ?", (case_id,)
+        ).fetchone()
+        connection.close()
+
+        return row is not None and row[0] == "CLOSED"
+    
 
     def process_alert(self, flow, probability):
 
@@ -294,6 +410,16 @@ class SOAREngine:
             flow,
             probability
         )
+
+        if alert.probability < config.THRESHOLD:
+            return {
+                "case": None,
+                "alert": alert,
+                "severity": "BELOW_THRESHOLD",
+                "action": "IGNORE",
+                "ttl": 0,
+            }
+
 
         enriched = self.enrich(alert)
 
@@ -310,6 +436,7 @@ class SOAREngine:
         case = self.correlate(alert)
         case = self.triage(case)
         decision = self.decide(case)
+        self.apply(case, decision)
         self.save_case(case)
         self.save_alert(case, alert)
 

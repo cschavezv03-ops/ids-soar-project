@@ -35,3 +35,25 @@ MODE     = "monitor"   # monitor | alert | enforce
 
 CAPTURE_INTERFACE = None
 BPF_FILTER = "ip and (tcp or udp)"
+
+# True on the development PC: containment prints the commands it would run and
+# keeps blocked IPs in memory. False on the lab VM, where iptables is real.
+CONTAINMENT_DRY_RUN = True
+
+# iptables and ipset need root. Rather than running the whole IDS as root, the
+# user gets a scoped sudoers rule for these two binaries only.
+CONTAINMENT_SUDO = False
+
+# Severity is probability AND context, never probability alone. One mid-
+# confidence flow is LOW; the same IP producing several is MEDIUM; a sustained
+# burst is HIGH. This is what lets a slow port scan - 88 flows around 0.57,
+# none of them individually above SEV_HIGH - still reach HIGH severity.
+ESCALATE_TO_MEDIUM = 3     # alerts from one IP
+ESCALATE_TO_HIGH   = 10
+
+# A case with no alert for this long is over. The next alert from that IP opens
+# a fresh case instead of inheriting the old worst probability forever.
+CASE_TTL_SECONDS = 900
+
+# Containment latency, one line per block: case, ip, severity, alerts, seconds.
+LATENCY_LOG = "latency.csv"
