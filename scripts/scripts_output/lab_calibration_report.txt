@@ -1,0 +1,198 @@
+A7 first pass - the lab captures through the Random Forest
+contract version 1.0   model trained 2026-08-24 21:29:03
+operating point from config.py: contain >= 0.7, HIGH >= 0.9
+
+Nothing was retrained and no threshold was moved. This measures where
+our own traffic lands. It is the ATTACK half of A7; the benign half
+cannot be measured with what exists today - see section 7.
+
+==============================================================================
+1. CAPTURES
+==============================================================================
+    benigno_ssh.pcap                        1 flows   expected: BENIGN
+    benigno_web.pcap                        1 flows   expected: BENIGN
+    portscan_lento_corrected.pcap         118 flows   expected: PortScan
+    portscan_rapido_corrected.pcap      1,147 flows   expected: PortScan
+    syn_flood_corrected.pcap              100 flows   expected: DDoS
+    ssh_bruteforce.pcap                     3 flows   expected: SSH-Patator
+
+==============================================================================
+2. WHERE EACH CAPTURE LANDS
+==============================================================================
+Share of each capture's flows falling in each severity band, and the
+median probability the model assigns.
+
+    capture                                 n   median p   ignored   MEDIUM    HIGH   >=0.70
+    benigno_ssh.pcap                        1     0.1000    100.0%     0.0%    0.0%     0.0%
+    benigno_web.pcap                        1     0.2200    100.0%     0.0%    0.0%     0.0%
+    portscan_lento_corrected.pcap         118     0.5515     93.2%     6.8%    0.0%     6.8%
+    portscan_rapido_corrected.pcap      1,147     0.5353     99.1%     0.9%    0.0%     0.9%
+    syn_flood_corrected.pcap              100     0.2200    100.0%     0.0%    0.0%     0.0%
+    ssh_bruteforce.pcap                     3     0.2800    100.0%     0.0%    0.0%     0.0%
+
+For the ATTACK captures the last column is detection rate per flow.
+For the BENIGN captures it is the false positive rate - on a sample far
+too small to mean anything, which is precisely the finding in section 7.
+
+==============================================================================
+3. DOES OUR TRAFFIC LOOK LIKE WHAT THE MODEL LEARNED?
+==============================================================================
+Medians of the features the forest leans on most, lab capture against
+the CICIDS2017 family it is meant to reproduce. A large gap here is the
+domain shift A5 section 6.3 predicted, made concrete.
+
+  benigno_ssh.pcap   vs   CICIDS2017 'BENIGN'
+      feature                            lab      CICIDS2017       ratio
+      bwd_pkt_len_mean                 52.75          107.00        0.49
+      bwd_pkt_len_std                 114.30            0.00         inf
+      bwd_pkt_len_max               1,580.00          117.00       13.50
+      pkt_len_mean                     49.20           70.80        0.69
+      pkt_len_std                     116.44           43.82        2.66
+      flow_duration            12,689,923.00       71,415.00      177.69
+      flow_pkts_s                      49.72           54.42        0.91
+
+  benigno_web.pcap   vs   CICIDS2017 'BENIGN'
+      feature                            lab      CICIDS2017       ratio
+      bwd_pkt_len_mean              1,454.00          107.00       13.59
+      bwd_pkt_len_std               2,640.42            0.00         inf
+      bwd_pkt_len_max               7,240.00          117.00       61.88
+      pkt_len_mean                    628.64           70.80        8.88
+      pkt_len_std                   1,870.62           43.82       42.69
+      flow_duration                 2,237.00       71,415.00        0.03
+      flow_pkts_s                   6,258.38           54.42      115.01
+
+  portscan_lento_corrected.pcap   vs   CICIDS2017 'PortScan'
+      feature                            lab      CICIDS2017       ratio
+      bwd_pkt_len_mean                  6.00            2.00        3.00
+      bwd_pkt_len_std                   0.00            0.00     n/a
+      bwd_pkt_len_max                   6.00            2.00        3.00
+      pkt_len_mean                      4.00            2.40        1.67
+      pkt_len_std                       2.00            2.00        1.00
+      flow_duration                    63.00          682.50        0.09
+      flow_pkts_s                  30,303.03        5,017.49        6.04
+
+  portscan_rapido_corrected.pcap   vs   CICIDS2017 'PortScan'
+      feature                            lab      CICIDS2017       ratio
+      bwd_pkt_len_mean                  6.00            2.00        3.00
+      bwd_pkt_len_std                   0.00            0.00     n/a
+      bwd_pkt_len_max                   6.00            2.00        3.00
+      pkt_len_mean                      4.00            2.40        1.67
+      pkt_len_std                       2.00            2.00        1.00
+      flow_duration                    25.00          682.50        0.04
+      flow_pkts_s                  40,816.33        5,017.49        8.13
+
+  syn_flood_corrected.pcap   vs   CICIDS2017 'DDoS'
+      feature                            lab      CICIDS2017       ratio
+      bwd_pkt_len_mean                  2.00        1,934.50        0.00
+      bwd_pkt_len_std                   0.00        2,189.77        0.00
+      bwd_pkt_len_max                   2.00        5,755.00        0.00
+      pkt_len_mean                      4.67          833.50        0.01
+      pkt_len_std                       1.89        1,903.96        0.00
+      flow_duration                   314.00    1,882,981.00        0.00
+      flow_pkts_s                   9,554.14            2.55    3,747.73
+
+  ssh_bruteforce.pcap   vs   CICIDS2017 'SSH-Patator'
+      feature                            lab      CICIDS2017       ratio
+      bwd_pkt_len_mean                132.71           85.78        1.55
+      bwd_pkt_len_std                 282.51          220.24        1.28
+      bwd_pkt_len_max               1,048.00          976.00        1.07
+      pkt_len_mean                    118.26           88.02        1.34
+      pkt_len_std                     269.53          189.59        1.42
+      flow_duration             4,834,066.00   12,044,221.00        0.40
+      flow_pkts_s                       5.59            4.41        1.27
+
+==============================================================================
+4. VERDICT PER ATTACK CAPTURE
+==============================================================================
+    portscan_lento_corrected.pcap
+        per-flow detection      0.0678  (8 of 118)
+        P(SOAR misses it all)   2.525e-04   over 118 flows
+    portscan_rapido_corrected.pcap
+        per-flow detection      0.0087  (10 of 1,147)
+        P(SOAR misses it all)   4.345e-05   over 1,147 flows
+    syn_flood_corrected.pcap
+        per-flow detection      0.0000  (0 of 100)
+        P(SOAR misses it all)   1.000e+00   over 100 flows
+    ssh_bruteforce.pcap
+        per-flow detection      0.0000  (0 of 3)
+        P(SOAR misses it all)   1.000e+00   over 3 flows
+
+==============================================================================
+5. THRESHOLD OR TRANSFER? THE DIAGNOSTIC THAT SEPARATES THEM
+==============================================================================
+If a capture's probabilities sit just under the cut, the fix is the
+cut. If they sit down among the benign traffic, no cut helps and the
+model does not transfer. These are different problems with different
+owners, so the report must not collapse them into 'detection is low'.
+
+    capture                                 n    0.10    0.20    0.30    0.40    0.50    0.60    0.70
+    benigno_ssh.pcap                        1  100.0%    0.0%    0.0%    0.0%    0.0%    0.0%    0.0%
+    benigno_web.pcap                        1  100.0%  100.0%    0.0%    0.0%    0.0%    0.0%    0.0%
+    portscan_lento_corrected.pcap         118  100.0%   74.6%   74.6%   74.6%   70.3%   21.2%    6.8%
+    portscan_rapido_corrected.pcap      1,147  100.0%   72.3%   67.4%   60.4%   58.5%   13.3%    0.9%
+    syn_flood_corrected.pcap              100  100.0%   89.0%    1.0%    0.0%    0.0%    0.0%    0.0%
+    ssh_bruteforce.pcap                     3   66.7%   66.7%   33.3%   33.3%    0.0%    0.0%    0.0%
+
+    capture                                p10   median     p90     max
+    benigno_ssh.pcap                      0.10     0.10    0.10    0.10
+    benigno_web.pcap                      0.22     0.22    0.22    0.22
+    portscan_lento_corrected.pcap         0.16     0.55    0.66    0.72
+    portscan_rapido_corrected.pcap        0.16     0.54    0.64    0.72
+    syn_flood_corrected.pcap              0.20     0.22    0.23    0.30
+    ssh_bruteforce.pcap                   0.07     0.28    0.38    0.40
+
+==============================================================================
+6. CAPTURE QUALITY: PACKETS LARGER THAN THE MTU
+==============================================================================
+A packet longer than 1500 bytes did not travel that way. It is the
+NIC coalescing several segments before the capture sees them (GRO/LRO/
+TSO). It matters here more than usual: the three features the forest
+leans on hardest are bwd_pkt_len_mean, _std and _max, and coalescing
+inflates all three. CICIDS2017 carries no such artefact, so this alone
+moves our traffic away from what the model learned.
+
+    capture                              fwd max   bwd max   flows > 1500 B
+    benigno_ssh.pcap                       1,672     1,580              1/1
+    benigno_web.pcap                          77     7,240              1/1
+    portscan_lento_corrected.pcap              6         6            0/118
+    portscan_rapido_corrected.pcap             6         6           0/1147
+    syn_flood_corrected.pcap                   6         2            0/100
+    ssh_bruteforce.pcap                      976     1,048              0/3
+
+Fix at capture time, not in the extractor - the extractor must keep
+measuring what is on the wire:
+    sudo ethtool -K <iface> gro off lro off tso off gso off
+
+==============================================================================
+7. THE HALF THAT CANNOT BE MEASURED YET
+==============================================================================
+Benign flows available in the lab captures: 2
+
+A6 measured a false positive rate of 0.00189 on CICIDS2017 benign
+traffic. To confirm or refute that number on OUR network we need enough
+benign flows for the estimate to have a usable interval:
+
+      benign flows   expected FP        95% interval on the rate
+                 2           0.0      [0.00022 , 0.66742]  <- what we have
+             1,000           1.9      [0.00021 , 0.00537]
+             5,000           9.4      [0.00088 , 0.00327]
+            10,000          18.9      [0.00114 , 0.00283]
+            50,000          94.5      [0.00153 , 0.00229]
+
+With what we have the interval spans from a fraction of a percent to
+most of the traffic: it cannot tell a working detector apart from one
+that blocks two users in three. This is not a detail to note in passing
+- it is the number the whole containment decision rests on.
+
+WHY MORE SSH SESSIONS WILL NOT FIX IT. A2 section 5 already flagged it:
+the benign captures are single long sessions, so one SSH login is ONE
+flow, not hundreds. Reaching thousands of benign flows needs sustained,
+varied traffic from several hosts - browsing, downloads, DNS - which is
+also the FAST benign profile that A5 section 6.3 identified as the
+riskiest, because CICIDS2017 associates speed with normal traffic.
+
+==============================================================================
+DONE
+==============================================================================
+Attack half measured. Benign half blocked on captures that do not
+exist yet. No threshold was moved; config.py is untouched.

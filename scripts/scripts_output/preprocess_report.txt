@@ -1,0 +1,209 @@
+CICIDS2017 preprocessing report
+contract version 1.0   random_state=42   test_size=0.2
+Rules applied on this side: R3 (sanitize) and R4 (corrupt rows).
+R1 and R2 do not apply to the CSV: it is the reference space the
+extractor converts toward. See contract/A3_preprocessing_note.md.
+
+==============================================================================
+1. LOAD
+==============================================================================
+reading 8 files, keeping 25 of 79 columns
+
+    Friday-WorkingHours-Afternoon-DDos.pcap_ISCX.csv        225,745 rows
+    Friday-WorkingHours-Afternoon-PortScan.pcap_ISCX.csv    286,467 rows
+    Friday-WorkingHours-Morning.pcap_ISCX.csv               191,033 rows
+    Monday-WorkingHours.pcap_ISCX.csv                       529,918 rows
+    Thursday-WorkingHours-Afternoon-Infilteration.pcap_ISCX.csv    288,602 rows
+    Thursday-WorkingHours-Morning-WebAttacks.pcap_ISCX.csv    170,366 rows
+    Tuesday-WorkingHours.pcap_ISCX.csv                      445,909 rows
+    Wednesday-workingHours.pcap_ISCX.csv                    692,703 rows
+
+    TOTAL                                                 2,830,743 rows
+
+==============================================================================
+2. LABELS
+==============================================================================
+label inventory before mapping (15 distinct values):
+
+    BENIGN                                    2,273,097
+    DoS Hulk                                    231,073
+    PortScan                                    158,930
+    DDoS                                        128,027
+    DoS GoldenEye                                10,293
+    FTP-Patator                                   7,938
+    SSH-Patator                                   5,897
+    DoS slowloris                                 5,796
+    DoS Slowhttptest                              5,499
+    Bot                                           1,966
+    Web Attack ï¿½ Brute Force                    1,507
+    Web Attack ï¿½ XSS                              652
+    Infiltration                                     36
+    Web Attack ï¿½ Sql Injection                     21
+    Heartbleed                                       11
+
+rows dropped per excluded family (excluded is NOT benign - the model
+never forms an opinion about these):
+
+    Bot                                           1,966
+    Web Attack ï¿½ Brute Force                    1,507
+    Web Attack ï¿½ XSS                              652
+    Infiltration                                     36
+    Web Attack ï¿½ Sql Injection                     21
+    Heartbleed                                       11
+
+    dropped total                                 4,193
+    rows kept                                 2,826,550
+
+==============================================================================
+3. RENAME AND COERCE
+==============================================================================
+renamed 24 CSV columns to contract names, in contract order
+all 24 coerced with errors='coerce'; any stray text is now NaN and is
+R3's problem in step 5, not an object dtype that reaches sklearn
+
+==============================================================================
+4. R4 - CORRUPT ROWS (finite negative in any of the 24)
+==============================================================================
+rows dropped: 2,886
+
+per-column breakdown (a row can offend in more than one column):
+
+    flow_iat_min                                  2,886
+    flow_duration                                   115
+    flow_iat_mean                                   115
+    flow_iat_max                                    115
+    flow_pkts_s                                     115
+    flow_byts_s                                      85
+
+Reconciliation with the A1 audit, which predicted 22 rows via
+Flow Duration. Two separate discrepancies, both explained:
+  - 22 was measured on the audit's --sample run (60k rows per file,
+    ~17% of the dataset). The same query over the full 8 CSVs returns
+    115. Reproduce: audit_dataset.py WITHOUT --sample.
+  - the audit only ever tested Flow Duration for negatives. The bulk
+    of the corruption is in Flow IAT Min, which nothing had looked at.
+    Checking all 24 positions, as contract.validate() already demands,
+    is what surfaced it.
+
+==============================================================================
+5. R3 - NON-FINITE VALUES -> 0.0
+==============================================================================
+cells fixed per column (NaN and inf counted separately):
+
+    column                                          NaN        inf
+    flow_pkts_s                                       0      2,856
+    flow_byts_s                                   1,357      1,499
+
+    TOTAL cells                                   1,357      4,355
+
+==============================================================================
+6. EXACT DUPLICATES (24 features + original label) - MEASURED ONLY
+==============================================================================
+duplicate rows (keeping the first of each group): 833,502 (29.52% of 2,823,664)
+
+per family:
+
+    family                                          total    duplicate    share
+    BENIGN                                      2,270,400      611,946   27.0%
+    DoS Hulk                                      230,914       59,092   25.6%
+    PortScan                                      158,930      157,005   98.8%
+    DDoS                                          128,008           12    0.0%
+    DoS GoldenEye                                  10,288           12    0.1%
+    FTP-Patator                                     7,934        2,005   25.3%
+    SSH-Patator                                     5,895        2,744   46.5%
+    DoS slowloris                                   5,796          414    7.1%
+    DoS Slowhttptest                                5,499          272    4.9%
+
+hypothetical proportions IF duplicates were dropped (1,990,162 rows would remain):
+
+    BENIGN (0)                                  1,658,454   83.33%
+    ATTACK (1)                                    331,708   16.67%
+    TOTAL                                       1,990,162  100.00%
+
+      BENIGN                                    1,658,454   83.33%
+      DoS Hulk                                    171,822    8.63%
+      DDoS                                        127,996    6.43%
+      DoS GoldenEye                                10,276    0.52%
+      FTP-Patator                                   5,929    0.30%
+      DoS slowloris                                 5,382    0.27%
+      DoS Slowhttptest                              5,227    0.26%
+      SSH-Patator                                   3,151    0.16%
+      PortScan                                      1,925    0.10%
+
+Not applied. --drop-duplicates exists and defaults to OFF: the choice
+belongs to A4/A5 and must be made from these numbers.
+
+==============================================================================
+7. FINAL CLASS BALANCE
+==============================================================================
+duplicates dropped: YES (--drop-duplicates)
+
+BENIGN (0)                                  1,658,454   83.33%
+ATTACK (1)                                    331,708   16.67%
+TOTAL                                       1,990,162  100.00%
+
+  BENIGN                                    1,658,454   83.33%
+  DoS Hulk                                    171,822    8.63%
+  DDoS                                        127,996    6.43%
+  DoS GoldenEye                                10,276    0.52%
+  FTP-Patator                                   5,929    0.30%
+  DoS slowloris                                 5,382    0.27%
+  DoS Slowhttptest                              5,227    0.26%
+  SSH-Patator                                   3,151    0.16%
+  PortScan                                      1,925    0.10%
+
+==============================================================================
+8. STRATIFIED SPLIT
+==============================================================================
+test_size=0.2   random_state=42   stratify=original label string
+
+    train rows                                  1,592,129
+    test rows                                     398,033
+
+class proportion in EACH half - stratification is meant to be checked
+by eye here, not asserted:
+
+  TRAIN
+    BENIGN (0)                                  1,326,763   83.33%
+    ATTACK (1)                                    265,366   16.67%
+    TOTAL                                       1,592,129  100.00%
+
+      BENIGN                                    1,326,763   83.33%
+      DoS Hulk                                    137,457    8.63%
+      DDoS                                        102,397    6.43%
+      DoS GoldenEye                                 8,221    0.52%
+      FTP-Patator                                   4,743    0.30%
+      DoS slowloris                                 4,305    0.27%
+      DoS Slowhttptest                              4,182    0.26%
+      SSH-Patator                                   2,521    0.16%
+      PortScan                                      1,540    0.10%
+
+  TEST
+    BENIGN (0)                                    331,691   83.33%
+    ATTACK (1)                                     66,342   16.67%
+    TOTAL                                         398,033  100.00%
+
+      BENIGN                                      331,691   83.33%
+      DoS Hulk                                     34,365    8.63%
+      DDoS                                         25,599    6.43%
+      DoS GoldenEye                                 2,055    0.52%
+      FTP-Patator                                   1,186    0.30%
+      DoS slowloris                                 1,077    0.27%
+      DoS Slowhttptest                              1,045    0.26%
+      SSH-Patator                                     630    0.16%
+      PortScan                                        385    0.10%
+
+
+==============================================================================
+9. PERSISTED
+==============================================================================
+    data/processed/train.parquet                          1,592,129 rows
+    data/processed/test.parquet                             398,033 rows
+
+data/ is gitignored on purpose. Rerun the command at the top of
+contract/A3_preprocessing_note.md to regenerate these files.
+
+==============================================================================
+DONE
+==============================================================================
+Nothing was trained, scaled or resampled. data/raw/ is untouched.

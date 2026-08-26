@@ -1,0 +1,24 @@
+Máximo global por bandera:
+FIN Flag Count    1
+SYN Flag Count    1
+RST Flag Count    1
+PSH Flag Count    1
+ACK Flag Count    1
+dtype: int64
+
+Media por etiqueta (dataset completo):
+                            FIN Flag Count  SYN Flag Count  RST Flag Count  PSH Flag Count  ACK Flag Count
+Label                                                                                                     
+BENIGN                               0.010           0.067             0.0           0.324           0.291
+Bot                                  0.000           0.000             0.0           0.625           0.375
+DDoS                                 0.000           0.000             0.0           0.454           0.547
+DoS Hulk                             0.242           0.000             0.0           0.119           0.640
+DoS Slowhttptest                     0.000           0.163             0.0           0.767           0.233
+DoS slowloris                        0.000           0.317             0.0           0.668           0.332
+FTP-Patator                          0.000           0.497             0.0           0.501           0.499
+Infiltration                         0.000           0.531             0.0           0.188           0.812
+PortScan                             0.000           0.000             0.0           1.000           0.000
+SSH-Patator                          0.000           0.006             0.0           0.509           0.491
+Web Attack � Brute Force             0.000           0.000             0.0           0.905           0.095
+Web Attack � Sql Injection           0.000           0.000             0.0           0.571           0.429
+Web Attack � XSS                     0.000           0.000             0.0           0.965           0.035

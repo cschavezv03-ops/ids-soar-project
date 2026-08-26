@@ -9,7 +9,7 @@ PUBLIC:
 
 INTERNAL:
     CSV_COLUMNS_24, label_to_target, TIME_IDX, PAYLOAD_IDX,
-    COUNT_IDX, RATE_IDX, sanitize, seconds_to_contract_time
+    COUNT_IDX, RATE_IDX, sanitize, sanitize_frame, seconds_to_contract_time
 
 Spec: contract/contract_characteristics.md
 """
@@ -229,6 +229,38 @@ def sanitize(vector: list[float]) -> list[float]:
         value = float(value)
         out.append(MISSING_VALUE if (math.isnan(value) or math.isinf(value)) else value)
     return out
+
+
+def sanitize_frame(df):
+    """
+    Apply contract rule R3 to a whole DataFrame of the 24 feature columns.
+
+    This is the vectorised twin of `sanitize()`: same rule, same constant,
+    NaN and +/-inf become MISSING_VALUE and everything is cast to float.
+    It exists only because the dataset side has 2.8 million rows and a Python
+    row loop over them is not a sensible way to spend an afternoon.
+
+    It MUST stay behaviourally identical to `sanitize()`. That is not a
+    convention, it is what stops training and inference from drifting apart:
+    the CSV path calls this one, the live extractor calls `sanitize()`, and if
+    the two ever disagree the model is scored on values it was never trained
+    on - silently. The guarantee is the equivalence test in
+    tests/test_preprocess.py, which runs both over the same frame and demands
+    identical output.
+
+    Returns a new DataFrame; the input is not modified.
+    """
+    # Local import: contract.py sits on the live inference path, which must not
+    # pay pandas' import cost for a rule it applies one vector at a time.
+    import numpy as np
+
+    # astype first, so the "everything is a float" half of R3 holds even for a
+    # frame of ints, exactly as float(value) does in sanitize().
+    out = df.astype("float64")
+
+    # replace + fillna, deliberately NOT np.nan_to_num: its posinf default is
+    # ~1.8e308, not 0.0, so the obvious one-liner silently breaks the rule.
+    return out.replace([np.inf, -np.inf], MISSING_VALUE).fillna(MISSING_VALUE)
 
 
 def validate(vector: list[float], *, strict: bool = True) -> list[str]:
