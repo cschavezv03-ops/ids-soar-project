@@ -41,7 +41,7 @@ class SOAREngine:
         self.init_db()
         self.load_cases()
 
-        if config.MODE == "enforce":
+        if self.current_mode() == "enforce":
             try:
                 self.containment.setup()
             except Exception as exc:
@@ -351,18 +351,18 @@ class SOAREngine:
             action = "MONITOR"
             ttl = 0
 
-        if config.MODE == "monitor":
+        if self.current_mode() == "monitor":
             effective_action = "MONITOR"
 
-        elif config.MODE == "alert":
+        elif self.current_mode() == "alert":
             effective_action = "ALERT"
 
-        elif config.MODE == "enforce":
+        elif self.current_mode() == "enforce":
             effective_action = action
 
         else:
             raise ValueError(
-                f"Unknown SOAR mode: {config.MODE}"
+                f"Unknown SOAR mode: {self.current_mode()}"
             )
 
         case.action = effective_action
@@ -448,6 +448,17 @@ class SOAREngine:
         connection.close()
 
         return row is not None and row[0] == "CLOSED"
+    
+    def current_mode(self):
+
+        try:
+            with open(config.RUNTIME_MODE_FILE) as handle:
+                mode = handle.read().strip()
+            if mode in ("monitor", "alert", "enforce"):
+                return mode
+        except (OSError, ValueError):
+            pass
+        return config.MODE
     
 
     def process_alert(self, flow, probability, partial=False):

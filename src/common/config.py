@@ -30,6 +30,7 @@ SHORT_BLOCK_TTL   = 300   # medium severity: 5 min
 # --- Storage / runtime ---
 CASES_DB = "cases.db"
 MODE     = "monitor"   # monitor | alert | enforce
+RUNTIME_MODE_FILE = "runtime_mode.txt"
 
 #--- Capture ---
 
