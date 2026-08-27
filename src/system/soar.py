@@ -1,6 +1,9 @@
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from collections import defaultdict, deque
 import sqlite3
+import time
+
 
 from src.common import config
 from src.system import containment as containment_backend
@@ -24,6 +27,7 @@ class Case:
     alert_count: int = 1
     alerts: list[Alert] = field(default_factory=list)
     blocked_at_severity: str | None = None
+    rate_trigger: str | None = None
 
 class SOAREngine:
 
@@ -32,6 +36,8 @@ class SOAREngine:
         self.cases = {}
         self.next_case_id = 1
         self.latencies = []
+        self.recent_flows = defaultdict(deque)
+        self.recent_auth_flows = defaultdict(deque)
         self.init_db()
         self.load_cases()
 
@@ -56,7 +62,8 @@ class SOAREngine:
                 probability REAL NOT NULL,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
-                alert_count INTEGER NOT NULL
+                alert_count INTEGER NOT NULL,
+                detection TEXT
             )
         """)
 
@@ -89,9 +96,10 @@ class SOAREngine:
                 probability,
                 created_at,
                 updated_at,
-                alert_count
+                alert_count,
+                detection
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             case.case_id,
             case.src_ip,
@@ -100,7 +108,8 @@ class SOAREngine:
             case.probability,
             case.created_at,
             case.updated_at,
-            case.alert_count
+            case.alert_count,
+            case.rate_trigger
         ))
 
         connection.commit()
@@ -143,7 +152,8 @@ class SOAREngine:
                 probability,
                 created_at,
                 updated_at,
-                alert_count
+                alert_count,
+                detection
             FROM cases
             ORDER BY case_id
         """)
@@ -162,6 +172,7 @@ class SOAREngine:
                 alert_count=row[7],
                 alerts=[],
                 blocked_at_severity=row[2] if row[3] == "BLOCK" else None,
+                rate_trigger=row[8]
             )
 
             cursor.execute("""
@@ -268,12 +279,47 @@ class SOAREngine:
         self.save_case(case)
         return True
 
+    def _rate(self, history, window, now):
+        
+        while history and now - history[0] > window:
+            history.popleft()
+        return len(history)
+
+    def observe(self, flow):
+
+        now = flow.timestamps[-1] if flow.timestamps else time.time()
+        source = flow.src_ip
+
+        history = self.recent_flows[source]
+        history.append(now)
+        flows_in_window = self._rate(history, config.RATE_WINDOW_SECONDS, now)
+
+        auth_in_window = 0
+
+        if getattr(flow, "dst_port", None) in config.AUTH_PORTS:
+            auth_history = self.recent_auth_flows[source]
+            auth_history.append(now)
+            auth_in_window = self._rate(
+                auth_history, config.AUTH_RATE_WINDOW, now
+            )
+
+        # Auth first: it is the more specific finding and the better label.
+        if auth_in_window >= config.AUTH_RATE_THRESHOLD:
+            return "AUTH_BRUTE_FORCE"
+
+        if flows_in_window >= config.RATE_FLOWS_THRESHOLD:
+            return "FLOOD"
+
+        return None
 
     def triage(self, case):
 
         probability = case.probability
 
-        if probability >= config.SEV_HIGH:
+        if case.rate_trigger:
+            severity = "HIGH"
+
+        elif probability >= config.SEV_HIGH:
             severity = "HIGH"
 
         elif case.alert_count >= config.ESCALATE_TO_HIGH:
@@ -404,14 +450,22 @@ class SOAREngine:
         return row is not None and row[0] == "CLOSED"
     
 
-    def process_alert(self, flow, probability):
+    def process_alert(self, flow, probability, partial=False):
 
-        alert = self.ingest(
-            flow,
-            probability
-        )
+        alert = self.ingest(flow, probability)
 
-        if alert.probability < config.THRESHOLD:
+        if partial:
+            return {
+                "case": None,
+                "alert": alert,
+                "severity": "PARTIAL",
+                "action": "MONITOR",
+                "ttl": 0,
+            }
+
+        rate_trigger = self.observe(flow)
+
+        if rate_trigger is None and alert.probability < config.THRESHOLD:
             return {
                 "case": None,
                 "alert": alert,
@@ -419,7 +473,6 @@ class SOAREngine:
                 "action": "IGNORE",
                 "ttl": 0,
             }
-
 
         enriched = self.enrich(alert)
 
@@ -434,6 +487,10 @@ class SOAREngine:
                 }
 
         case = self.correlate(alert)
+
+        if rate_trigger:
+            case.rate_trigger = rate_trigger
+
         case = self.triage(case)
         decision = self.decide(case)
         self.apply(case, decision)

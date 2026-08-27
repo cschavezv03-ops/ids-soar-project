@@ -21,10 +21,9 @@ class PacketCapture:
 
         self.soar = SOAREngine()
 
-        # Guarda una ventana independiente por cada flow activo.
         self.inference_windows = {}
 
-    def process_inference(self, flow):
+    def process_inference(self, flow, partial=False):
 
         result = self.inference_pipeline.process_flow(flow)
 
@@ -32,7 +31,8 @@ class PacketCapture:
 
         soar_result = self.soar.process_alert(
             flow=flow,
-            probability=probability
+            probability=probability,
+            partial=partial,
         )
 
         print("Inference:", result)
@@ -115,6 +115,10 @@ class PacketCapture:
         # Packet size
 
         packet_size = len(packet)
+
+        if packet_size < 60:
+            payload_size += 60 - packet_size
+            packet_size = 60
 
         timestamp = float(packet.time)
 

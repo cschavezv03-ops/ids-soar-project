@@ -33,16 +33,16 @@ MODE     = "monitor"   # monitor | alert | enforce
 
 #--- Capture ---
 
-CAPTURE_INTERFACE = None
+CAPTURE_INTERFACE = "enp0s3"
 BPF_FILTER = "ip and (tcp or udp)"
 
 # True on the development PC: containment prints the commands it would run and
 # keeps blocked IPs in memory. False on the lab VM, where iptables is real.
-CONTAINMENT_DRY_RUN = True
+CONTAINMENT_DRY_RUN = False
 
 # iptables and ipset need root. Rather than running the whole IDS as root, the
 # user gets a scoped sudoers rule for these two binaries only.
-CONTAINMENT_SUDO = False
+CONTAINMENT_SUDO = True
 
 # Severity is probability AND context, never probability alone. One mid-
 # confidence flow is LOW; the same IP producing several is MEDIUM; a sustained
@@ -57,3 +57,17 @@ CASE_TTL_SECONDS = 900
 
 # Containment latency, one line per block: case, ip, severity, alerts, seconds.
 LATENCY_LOG = "latency.csv"
+
+# --- Rate correlation: SOAR sees the attacker, the model sees one flow ---
+# Thresholds measured on lab traffic (A7). Benign peaks at 300 new connections
+# per IP per 10s; slowloris reaches 486, the SYN floods thousands. 400 sits in
+# the gap, with margin on both sides.
+RATE_WINDOW_SECONDS  = 10
+RATE_FLOWS_THRESHOLD = 400
+
+# Authentication ports get their own, much tighter rule. Benign lab traffic has
+# ZERO connections to port 22, and a real login is one connection - so 10 in a
+# minute cannot be a human, while hydra passes it without trying.
+AUTH_PORTS          = {22}
+AUTH_RATE_WINDOW    = 60
+AUTH_RATE_THRESHOLD = 10
