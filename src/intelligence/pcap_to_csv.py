@@ -1,38 +1,22 @@
 """
-Thin wrapper around cicflowmeter's internals, with two bugs worked around.
+Thin wrapper around cicflowmeter's internals.
 
-BUG 1 (CLI): cicflowmeter 0.5.0's main() calls create_sniffer() with
-positional arguments that no longer match its signature, so `verbose`
-lands in `fields` and every command-line invocation crashes. We bypass
-main() and pass keyword arguments instead.
-
-BUG 2 (double counting): Flow.__init__ seeds self.packets with the first
-packet, and FlowSession.process() then calls add_packet() with that same
-packet. Every flow counts its first packet twice, inflating forward
-packet/byte counts, SYN counts, rates, and corrupting IAT statistics
-(the duplicate has an identical timestamp, so it injects a 0-second gap).
-We clear the pre-seeded list so process() is the only thing that adds it.
+cicflowmeter 0.5.0 carries three defects that would silently corrupt the
+feature vector. They are documented in copilot/cicflowmeter_bugs.md and
+corrected in cicflowmeter_patches.py, except for the command-line defect
+(bug 1), whose fix lives here: main() mis-orders its positional arguments,
+so this module bypasses it and calls create_sniffer() with keyword arguments
+instead. Do not turn that call back into positional form.
 """
 import sys
 from pathlib import Path
 
-from cicflowmeter.flow import Flow
-from cicflowmeter.flow_session import FlowSession
 from cicflowmeter.sniffer import create_sniffer
 
-# --- Bug 2 patch. Applied at import time, before any Flow is built. ---
-_original_flow_init = Flow.__init__
-
-
-def _patched_flow_init(self, packet, direction):
-    _original_flow_init(self, packet, direction)
-    # Drop the pre-seeded packet. FlowSession.process() adds it back
-    # immediately after construction, so nothing is lost.
-    self.packets = []
-
-
-Flow.__init__ = _patched_flow_init
-# ---------------------------------------------------------------------
+try:  # imported as part of the package (tests, live extractor)
+    from .cicflowmeter_patches import apply_patches
+except ImportError:  # run directly: python src/intelligence/pcap_to_csv.py
+    from cicflowmeter_patches import apply_patches
 
 
 def pcap_to_csv(pcap_path: str | Path, csv_path: str | Path) -> Path:
@@ -42,6 +26,10 @@ def pcap_to_csv(pcap_path: str | Path, csv_path: str | Path) -> Path:
     if not pcap_path.exists():
         raise FileNotFoundError(f"pcap not found: {pcap_path}")
     csv_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Must happen before the sniffer exists: it is what builds the Flow
+    # objects, and a Flow built from unpatched code carries the defects.
+    apply_patches()
 
     sniffer, session = create_sniffer(
         input_file=str(pcap_path),

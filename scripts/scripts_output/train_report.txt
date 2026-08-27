@@ -1,0 +1,121 @@
+A4 training report - three classifiers on the CICIDS2017 split
+contract version 1.0   random_state=42
+Threshold is the sklearn default 0.5 throughout. That is a
+placeholder, not a decision: A6 sets the operating point.
+
+==============================================================================
+1. DATA
+==============================================================================
+feature columns verified against contract.FEATURES_24: 24 columns, in order
+
+    set                  rows
+    train           1,592,129   BENIGN    1,326,763 (83.33%)   ATTACK     265,366 (16.67%)
+    test              398,033   BENIGN      331,691 (83.33%)   ATTACK      66,342 (16.67%)
+
+Matches contract/A3_preprocessing_note.md section 3 (deduplicated
+dataset, decision D3). Nothing was re-preprocessed here.
+
+==============================================================================
+2. CROSS-VALIDATION (stability check)
+==============================================================================
+5-fold stratified CV, scoring = F1 of the attack class
+subsample: 300,000 of 1,592,129 training rows (18.8%), stratified on the family label
+
+This is a deliberate time trade-off, stated rather than hidden: the
+question CV answers is whether a score is stable across splits, and
+300k rows answer it as well as 1.6M for a fraction of the cost. The
+FINAL models below are fitted on the FULL training set.
+
+    model                       mean F1        std   folds
+    Random Forest                0.9913     0.0008   0.9914 0.9921 0.9922 0.9906 0.9903
+    Logistic regression          0.8204     0.0020   0.8231 0.8188 0.8177 0.8205 0.8219
+    Fixed-rule baseline          0.6063     0.0049   0.6134 0.6022 0.6071 0.5997 0.6093
+
+==============================================================================
+3. FIT ON THE FULL TRAINING SET
+==============================================================================
+    Random Forest            fitted in     37.1 s
+    Logistic regression      fitted in     19.4 s
+                             converged in 262 of 1000 iterations
+    Fixed-rule baseline      fitted in      0.2 s
+
+Baseline threshold, chosen on TRAINING data only:
+    rule:            flow_pkts_s <= 0.203715 -> ATTACK
+    how:             swept 400 distinct candidate
+                     thresholds, taken as quantiles of the training
+                     values (observed values, never interpolated),
+                     in BOTH directions, keeping the best attack F1
+    its train F1:    0.6049
+
+    Both directions, on training data:
+        flow_pkts_s >=     0.077608   F1 = 0.2858
+        flow_pkts_s <=     0.203715   F1 = 0.6049  <- kept
+        (a classifier that flags EVERY flow scores 0.2857)
+
+    The operational rule is worded 'more than N connections in 10
+    seconds', i.e. HIGH rate = attack. On this data that direction is
+    worth essentially nothing: it scores what a constant 'everything
+    is an attack' classifier scores. Median flow_pkts_s is 0.19 for
+    attacks and 54.42 for benign traffic - the dataset's attacks are
+    the SLOW flows, because a DoS holds connections open and a scan
+    probe is one packet in a flow that then waits. The direction is
+    therefore fitted on TRAINING data like the threshold, so that the
+    comparison in A5 is against the rule at its best and not against
+    a strawman of our own wording.
+
+==============================================================================
+4. ATTACK-CLASS SCORES ON TEST (threshold 0.5)
+==============================================================================
+    model                     precision     recall         F1
+    Random Forest                0.9888     0.9952     0.9920
+    Logistic regression          0.7395     0.9080     0.8151
+    Fixed-rule baseline          0.7285     0.5122     0.6015
+
+The baseline has no probability output by construction, so it has no
+ROC curve and no AUC. A5 must compare it on these three numbers only.
+
+==============================================================================
+5. RANDOM FOREST: TRAIN vs TEST (overfitting check)
+==============================================================================
+                  precision     recall         F1
+    TRAIN            0.9930     1.0000     0.9965
+    TEST             0.9888     0.9952     0.9920
+    gap                                    0.0045
+
+A forest with max_depth=None fits the training set almost perfectly by
+construction, so a gap here is expected and is not by itself evidence
+of a broken model. What matters is the size of the TEST number.
+
+==============================================================================
+6. RECALL PER ATTACK FAMILY ON TEST
+==============================================================================
+The argument for machine learning over a fixed rule lives or dies
+here. Measured, not assumed.
+
+    family               metric                       n       Random    Logistic  Fixed-rule
+    BENIGN               false positive rate    331,691      0.0023      0.0640      0.0382
+    DoS Hulk             recall                  34,365      0.9941      0.9061      0.8063
+    DDoS                 recall                  25,599      0.9990      0.9982      0.1649
+    DoS GoldenEye        recall                   2,055      0.9859      0.7693      0.2414
+    FTP-Patator          recall                   1,186      0.9983      0.0008      0.0000
+    DoS slowloris        recall                   1,077      0.9926      0.8960      0.5840
+    DoS Slowhttptest     recall                   1,045      0.9952      0.9072      0.8517
+    SSH-Patator          recall                     630      0.9651      0.0000      0.0000
+    PortScan             recall                     385      0.9377      0.1325      0.0857
+
+==============================================================================
+7. PERSISTED
+==============================================================================
+    models/random_forest.joblib                  contract 1.0
+    models/logistic_regression.joblib            contract 1.0
+    models/baseline_rule.joblib                  contract 1.0
+    data/processed/test_predictions.parquet      398,033 rows, 5 prediction columns + y_true + label
+
+Both models/*.joblib and data/ are gitignored. The reproducible
+artifact is this script plus the note, not the bytes on disk.
+
+==============================================================================
+DONE
+==============================================================================
+Three models fitted. No winner chosen, no threshold tuned, nothing
+plotted - that is A5 and A6.

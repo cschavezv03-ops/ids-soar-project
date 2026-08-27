@@ -1,0 +1,178 @@
+A5 evaluation report - comparing the three classifiers
+contract version 1.0
+
+EVERY NUMBER BELOW IS AT DECISION THRESHOLD 0.5, the sklearn default.
+That is not the operating point of the system: A6 chooses it. An F1
+quoted without its threshold is not a reproducible number.
+Nothing was retrained. All figures come from the artifacts A4 wrote.
+
+==============================================================================
+1. ARTIFACTS AND CONTRACT CHECK
+==============================================================================
+    Random Forest            contract 1.0   trained 2026-08-24 21:29:03   1,592,129 rows
+    Logistic regression      contract 1.0   trained 2026-08-24 21:29:03   1,592,129 rows
+    Fixed-rule baseline      contract 1.0   trained 2026-08-24 21:29:03   1,592,129 rows
+
+    predictions              data/processed/test_predictions.parquet  398,033 rows
+
+Every model was refused unless its stored CONTRACT_VERSION and feature
+order match this code. A model paired with a contract it was not
+trained against reads its inputs out of the wrong slots: every metric
+below would still compute, and all of them would be meaningless.
+
+==============================================================================
+2. COMPARISON - attack class, at threshold 0.5
+==============================================================================
+    model                                          precision    recall        F1   ROC-AUC    PR-AUC
+    Random Forest                                     0.9888    0.9952    0.9920    0.9994    0.9979
+    Logistic regression                               0.7395    0.9080    0.8151    0.9839    0.9391
+    Fixed rule (NAIVE direction, flow_pkts_s >=)      0.1672    0.9857    0.2859                    
+    Fixed rule (FITTED direction, flow_pkts_s <=)     0.7285    0.5122    0.6015                    
+
+    (*) The fixed rule outputs 0/1 and has no predict_proba, so it has
+        NO ROC-AUC and NO PR-AUC - those cells are empty, not zero. A
+        threshold rule produces no ranking of flows by confidence, so
+        there is no curve to integrate. Synthesising a score for it
+        would fabricate a curve it does not have.
+
+The two fixed-rule rows are the SAME rule aimed in opposite directions.
+    NAIVE  (the project brief's assumption): flow_pkts_s >= 0.077608
+           train F1 0.2858
+    FITTED (chosen on training data only):   flow_pkts_s <= 0.203715
+           train F1 0.6049
+    For scale: a classifier that flags EVERY flow scores F1 0.2857 on test.
+
+Both rows are published deliberately. The naive row is the evidence
+that the brief's intuition is false on this dataset; the fitted row is
+the comparison that means something. Neither threshold was fitted
+here - A4 chose both, and A5 reads them back out of the saved model.
+
+==============================================================================
+3. CONFUSION MATRICES - absolute counts, threshold 0.5
+==============================================================================
+Rows = truth, columns = prediction. n = 398,033 test flows (331,691 benign, 66,342 attack).
+
+  Random Forest
+                           pred BENIGN   pred ATTACK
+      true BENIGN              330,940           751
+      true ATTACK                  319        66,023
+      -> 751 false positives: legitimate flows that would
+         have been blocked by iptables, cutting off a real user.
+      -> 319 false negatives: attack flows that reached
+         the host with no alert and no containment.
+
+  Logistic regression
+                           pred BENIGN   pred ATTACK
+      true BENIGN              310,468        21,223
+      true ATTACK                6,105        60,237
+      -> 21,223 false positives: legitimate flows that would
+         have been blocked by iptables, cutting off a real user.
+      -> 6,105 false negatives: attack flows that reached
+         the host with no alert and no containment.
+
+  Fixed rule (FITTED direction, flow_pkts_s <=)
+                           pred BENIGN   pred ATTACK
+      true BENIGN              319,030        12,661
+      true ATTACK               32,364        33,978
+      -> 12,661 false positives: legitimate flows that would
+         have been blocked by iptables, cutting off a real user.
+      -> 32,364 false negatives: attack flows that reached
+         the host with no alert and no containment.
+
+The two error cells are not interchangeable and the system does not
+treat them as such. A false negative costs one missed flow, and the
+SOAR groups hundreds of flows per attack into one case, so a single
+attack survives many misses. A false positive blocks a real user.
+
+==============================================================================
+4. CURVES AND THRESHOLD-INDEPENDENT SCORES
+==============================================================================
+    model                        ROC-AUC      PR-AUC
+    Random Forest                 0.9994      0.9979
+    Logistic regression           0.9839      0.9391
+    chance (prevalence)           0.5000      0.1667
+
+WHY PR-AUC IS THE ONE TO READ HERE. The test set is 16.67% attacks. A
+ROC curve plots recall against the FALSE POSITIVE RATE, whose
+denominator is the 331,691 benign flows - so thousands of false
+positives still move it barely at all, and every model looks
+excellent. Precision-Recall uses precision instead, whose denominator
+is what the model actually flagged, so it degrades as soon as the
+model starts alarming on benign traffic. Chance level makes the point:
+    ROC-AUC of a coin flip = 0.5000, PR-AUC of a coin flip = 0.1667.
+A ROC-AUC of 0.99 is 'better than a coin flip'. A PR-AUC of 0.99 is
+six times the prevalence floor. Only the second is informative.
+
+    figure: reports/figures/roc_curves.png
+    figure: reports/figures/pr_curves.png
+    (both models on shared axes; the fixed rule is absent because it
+     has no curve, see the footnote in section 2)
+
+==============================================================================
+5. RECALL PER ATTACK FAMILY - recomputed from the saved predictions
+==============================================================================
+The BENIGN row is a FALSE POSITIVE RATE: recall of the attack class is
+undefined for it. Everything here is recomputed from
+data/processed/test_predictions.parquet, not copied from the A4 report, so the table is
+verifiable from the artifacts alone.
+
+    family              metric                        n  Random Forest       Logistic     Rule NAIVE    Rule FITTED
+    BENIGN              false positive rate     331,691         0.0023         0.0640         0.9817         0.0382
+    DoS Hulk            recall                   34,365         0.9941         0.9061         0.9964         0.8063
+    DDoS                recall                   25,599         0.9990         0.9982         0.9998         0.1649
+    DoS GoldenEye       recall                    2,055         0.9859         0.7693         0.8044         0.2414
+    FTP-Patator         recall                    1,186         0.9983         0.0008         1.0000         0.0000
+    DoS slowloris       recall                    1,077         0.9926         0.8960         0.7632         0.5840
+    DoS Slowhttptest    recall                    1,045         0.9952         0.9072         0.8622         0.8517
+    SSH-Patator         recall                      630         0.9651         0.0000         1.0000         0.0000
+    PortScan            recall                      385         0.9377         0.1325         0.9377         0.0857
+
+HOW TO READ THE 'Rule NAIVE' COLUMN - it is not a good detector.
+    At a glance it looks like the best model in the table: 1.0000 on
+    both Patators, 0.9998 on DDoS. It reaches those numbers by
+    flagging 391,014 of 398,033 test flows as
+    attacks - including 325,624 of the 331,691 benign ones, a
+    false positive rate of 0.9817.
+    Its recall is high for the same reason a smoke alarm that is
+    always sounding has perfect recall. This is exactly why recall is
+    never read on its own here, and why the BENIGN row of this table
+    is part of it rather than a separate note.
+
+FINDING 1 - the fixed rule zeroes out four families.
+    FTP-Patator 0.0000, SSH-Patator 0.0000, PortScan 0.0857, DDoS
+    0.1649. None of the four separates from normal traffic BY RATE:
+    brute force is identified by how regular its packet sizes are, a
+    port scan by tiny flows carrying no payload, and DDoS sits on the
+    wrong side of a rule that ended up meaning 'slow flow = attack'.
+    This is the measured form of the project's central argument. The
+    rule does not fail because it is a simple model; it fails because
+    ONE feature cannot describe four different shapes of attack, and a
+    threshold can only look at one.
+
+FINDING 2 - an aggregate can hide two entire families.
+    Logistic regression scores F1 0.8151 overall, which reads as a
+    respectable model, while scoring 0.0008 on FTP-Patator and 0.0000
+    on SSH-Patator. Both are demo scenarios. A single headline number
+    would have concluded that the linear model is adequate; this table
+    is the concrete reason this project does not evaluate on one.
+
+==============================================================================
+6. DECISION
+==============================================================================
+Chosen model: RANDOM FOREST.
+
+    attack-class F1 on test   0.9920   vs 0.8151 (logistic) and 0.6015 (fixed rule, fitted direction)
+    PR-AUC                    0.9979
+    CV stability (A4)         sigma 0.0008 over 5 folds
+    false positive rate       0.0023
+    lowest per-family recall  0.9377 (PortScan) - no family is abandoned
+
+It wins on every axis measured here, and - the reason that matters -
+it is the only one of the three that detects all nine families. See
+contract/A5_evaluation_note.md for the written decision, the corrected
+defence argument and the domain-shift risk this number does NOT cover.
+
+==============================================================================
+DONE
+==============================================================================
+Nothing retrained, no threshold chosen. A6 sets the operating point.

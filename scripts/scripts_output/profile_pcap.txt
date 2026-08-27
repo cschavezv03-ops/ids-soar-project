@@ -1,0 +1,126 @@
+====================================================================
+benigno_ssh.pcap
+====================================================================
+  ROBUSTNESS
+    flows extracted:                  1
+    wrong length (!= 24):             0
+    non-finite or negative:           0
+    fail contract validation:         0
+    -> all flows valid
+  SIGNATURE
+    flows:                            1
+    tiny flows (<= 3 packets):        0     0.0%
+    control-only flows (<=64B):       0     0.0%
+    mean asymmetry (0..1):         0.08
+    median packets/flow:            631
+    median bytes/flow:            31043
+    -> looks mixed: no single dominant shape
+
+====================================================================
+benigno_web.pcap
+====================================================================
+  ROBUSTNESS
+    flows extracted:                  1
+    wrong length (!= 24):             0
+    non-finite or negative:           0
+    fail contract validation:         0
+    -> all flows valid
+  SIGNATURE
+    flows:                            1
+    tiny flows (<= 3 packets):        0     0.0%
+    control-only flows (<=64B):       0     0.0%
+    mean asymmetry (0..1):         0.98
+    median packets/flow:             14
+    median bytes/flow:             8801
+    -> looks conversation-like: larger flows with one-sided payload
+
+====================================================================
+portscan_lento_corrected.pcap
+====================================================================
+  ROBUSTNESS
+    flows extracted:                118
+    wrong length (!= 24):             0
+    non-finite or negative:           0
+    fail contract validation:         0
+    -> all flows valid
+  SIGNATURE
+    flows:                          118
+    tiny flows (<= 3 packets):      118   100.0%
+    control-only flows (<=64B):     118   100.0%
+    mean asymmetry (0..1):         0.63
+    median packets/flow:              2
+    median bytes/flow:                8
+    -> looks scan/flood-like: mostly tiny control-only flows
+
+====================================================================
+portscan_rapido_corrected.pcap
+====================================================================
+  ROBUSTNESS
+    flows extracted:              1,147
+    wrong length (!= 24):             0
+    non-finite or negative:           0
+    fail contract validation:         0
+    -> all flows valid
+  SIGNATURE
+    flows:                        1,147
+    tiny flows (<= 3 packets):    1,147   100.0%
+    control-only flows (<=64B):   1,147   100.0%
+    mean asymmetry (0..1):         0.63
+    median packets/flow:              2
+    median bytes/flow:                8
+    -> looks scan/flood-like: mostly tiny control-only flows
+
+====================================================================
+ssh_bruteforce.pcap
+====================================================================
+  ROBUSTNESS
+    flows extracted:                  3
+    wrong length (!= 24):             0
+    non-finite or negative:           0
+    fail contract validation:         0
+    -> all flows valid
+  SIGNATURE
+    flows:                            3
+    tiny flows (<= 3 packets):        0     0.0%
+    control-only flows (<=64B):       0     0.0%
+    mean asymmetry (0..1):         0.16
+    median packets/flow:             27
+    median bytes/flow:             3193
+    -> looks mixed: no single dominant shape
+
+====================================================================
+syn_flood_corrected.pcap
+====================================================================
+  ROBUSTNESS
+    flows extracted:                100
+    wrong length (!= 24):             0
+    non-finite or negative:           0
+    fail contract validation:         0
+    -> all flows valid
+  SIGNATURE
+    flows:                          100
+    tiny flows (<= 3 packets):      100   100.0%
+    control-only flows (<=64B):     100   100.0%
+    mean asymmetry (0..1):         0.71
+    median packets/flow:              3
+    median bytes/flow:               14
+    -> looks scan/flood-like: mostly tiny control-only flows
+
+====================================================================
+synthetic_smoke.pcap
+====================================================================
+  ROBUSTNESS
+    flows extracted:                  4
+    wrong length (!= 24):             0
+    non-finite or negative:           0
+    fail contract validation:         0
+    -> all flows valid
+  SIGNATURE
+    flows:                            4
+    tiny flows (<= 3 packets):        3    75.0%
+    control-only flows (<=64B):       3    75.0%
+    mean asymmetry (0..1):         0.23
+    median packets/flow:              2
+    median bytes/flow:                0
+    -> looks scan/flood-like: mostly tiny control-only flows
+
